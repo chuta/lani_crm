@@ -16,6 +16,18 @@ const navItems = [
 ]
 
 const guideUrl = '/partnerships/PARTNERSHIP-OS-USER-GUIDE-v1.0.docx'
+
+const loggingOut = ref(false)
+
+async function logout() {
+  loggingOut.value = true
+  try {
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
+  } catch {
+    // proceed even if the server call fails — clear locally
+  }
+  window.location.href = '/auth/login?return=/partnerships/'
+}
 </script>
 
 <template>
@@ -69,6 +81,19 @@ const guideUrl = '/partnerships/PARTNERSHIP-OS-USER-GUIDE-v1.0.docx'
             >
               📖 User Guide
             </a>
+            <span class="w-px h-6 bg-deep-600 mx-1"></span>
+            <button
+              @click="logout"
+              :disabled="loggingOut"
+              class="px-3 py-2 rounded-lg text-sm font-medium transition-colors text-gray-400 hover:text-red-400 hover:bg-red-500/10 flex items-center gap-1.5"
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+              {{ loggingOut ? 'Signing out…' : 'Sign out' }}
+            </button>
           </nav>
           <!-- Mobile hamburger -->
           <button @click="mobileMenuOpen = !mobileMenuOpen" class="md:hidden p-2 text-gray-400 hover:text-white">
@@ -101,6 +126,19 @@ const guideUrl = '/partnerships/PARTNERSHIP-OS-USER-GUIDE-v1.0.docx'
         >
           📖 User Guide
         </a>
+        <hr class="border-deep-600 my-2" />
+        <button
+          @click="logout"
+          :disabled="loggingOut"
+          class="w-full text-left block px-3 py-2 rounded-lg text-sm font-medium transition-colors text-gray-400 hover:text-red-400 hover:bg-red-500/10 flex items-center gap-1.5"
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+            <polyline points="16 17 21 12 16 7" />
+            <line x1="21" y1="12" x2="9" y2="12" />
+          </svg>
+          {{ loggingOut ? 'Signing out…' : 'Sign out' }}
+        </button>
       </div>
     </header>
 
