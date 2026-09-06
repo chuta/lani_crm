@@ -19,6 +19,7 @@ import claimsRouter from './routes/claims.js';
 import approvalsRouter from './routes/approvals.js';
 import economicsRouter from './routes/economics.js';
 import releaseRouter from './routes/release.js';
+import bdProspectingRouter from './routes/bd-prospecting.js';
 
 const PORT = Number(process.env.PARTNERSHIP_PORT || 3003);
 const HOST = process.env.PARTNERSHIP_HOST || '127.0.0.1';
@@ -65,6 +66,9 @@ app.use('/api/partnerships/proposals', proposalsRouter);
 app.use('/api/partnerships/proposals/:proposal_id/approvals', approvalsRouter);
 app.use('/api/partnerships/proposals/:proposal_id/economics', economicsRouter);
 app.use('/api/partnerships/proposals/:proposal_id/release', releaseRouter);
+
+// BD Prospecting Tracker
+app.use('/api/partnerships/bd-prospecting', bdProspectingRouter);
 
 // Root
 app.get('/', (_req: Request, res: Response) => {

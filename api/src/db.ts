@@ -362,6 +362,34 @@ export function initializeCPOTables(): void {
     }
   }
 
+  // ── BD Prospecting Targets Table ──
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS bd_prospecting_targets (
+      id TEXT PRIMARY KEY,
+      firm_name TEXT NOT NULL,
+      tier INTEGER NOT NULL DEFAULT 2 CHECK(tier IN (1, 2)),
+      category TEXT NOT NULL DEFAULT 'Screening Queue'
+        CHECK(category IN ('Category A','Category B','Category C','Hold','Screening Queue')),
+      why_this_fits TEXT,
+      contact_email TEXT,
+      notes TEXT,
+      status INTEGER NOT NULL DEFAULT 1 CHECK(status BETWEEN 1 AND 10),
+      special_flags TEXT,
+      auto_promoted INTEGER NOT NULL DEFAULT 0,
+      deal_id TEXT,
+      proposal_id TEXT,
+      bd_owner TEXT,
+      last_contacted_at TEXT,
+      next_action TEXT,
+      is_archived INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_bdp_tier ON bd_prospecting_targets(tier);
+    CREATE INDEX IF NOT EXISTS idx_bdp_status ON bd_prospecting_targets(status);
+    CREATE INDEX IF NOT EXISTS idx_bdp_category ON bd_prospecting_targets(category);
+  `);
+
   // ── Migration: add Legal_Commercial to the approvals CHECK constraint ──
   // SQLite cannot ALTER a CHECK constraint — rebuild the table when needed.
   const approvalsSql = (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='proposal_approvals'").get() as any)?.sql || '';

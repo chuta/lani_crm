@@ -7,6 +7,7 @@ import DealDetail from './pages/DealDetail.vue'
 import ProposalsDashboard from './pages/ProposalsDashboard.vue'
 import ProposalDetail from './pages/ProposalDetail.vue'
 import ClaimsLibrary from './pages/ClaimsLibrary.vue'
+import BDProspectingTracker from './pages/BDProspectingTracker.vue'
 
 const routes = [
   { path: '/', redirect: '/pipeline' },
@@ -19,6 +20,7 @@ const routes = [
   { path: '/proposals', name: 'ProposalsDashboard', component: ProposalsDashboard },
   { path: '/proposals/:id', name: 'ProposalDetail', component: ProposalDetail, props: true },
   { path: '/claims-library', name: 'ClaimsLibrary', component: ClaimsLibrary },
+  { path: '/prospecting', name: 'Prospecting', component: BDProspectingTracker },
 ]
 
 const router = createRouter({

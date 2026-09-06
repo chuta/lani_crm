@@ -150,6 +150,33 @@ export const cpoApi = {
   seedResponsibilities: (proposalId: string) =>
     req<any>(proposalPath(proposalId, '/responsibilities/seed'), { method: 'POST', body: JSON.stringify({}) }),
 
+  /* ─── BD Prospecting Tracker ─── */
+  listBDTargets: (params?: Record<string, string>) => {
+    const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+    return req<{ ok: boolean; targets: any[]; total: number; stages: any[] }>(`/bd-prospecting${qs}`);
+  },
+  getBDTarget: (id: string) => req<{ ok: boolean; target: any }>(`/bd-prospecting/${id}`),
+  updateBDStatus: (id: string, status: number, note?: string) =>
+    req<{ ok: boolean; target: any; created_deal?: any }>(`/bd-prospecting/${id}/status`, {
+      method: 'PATCH', body: JSON.stringify({ status, note }),
+    }),
+  updateBDTarget: (id: string, data: any) =>
+    req<{ ok: boolean; target: any }>(`/bd-prospecting/${id}`, {
+      method: 'PATCH', body: JSON.stringify(data),
+    }),
+  createBDTarget: (data: any) =>
+    req<{ ok: boolean; target: any }>('/bd-prospecting', {
+      method: 'POST', body: JSON.stringify(data),
+    }),
+  archiveBDTarget: (id: string) =>
+    req<{ ok: boolean }>(`/bd-prospecting/${id}`, { method: 'DELETE' }),
+  linkBDToProposal: (id: string, proposal_id: string) =>
+    req<{ ok: boolean; target: any }>(`/bd-prospecting/${id}/link-proposal`, {
+      method: 'PATCH', body: JSON.stringify({ proposal_id }),
+    }),
+  seedBDTargets: () =>
+    req<{ ok: boolean; seeded?: number; skipped?: boolean }>('/bd-prospecting/seed', { method: 'POST' }),
+
   /* ─── Commercial & Partnership Terms (template §9) ─── */
   getTerms: (proposalId: string) =>
     req<any>(proposalPath(proposalId, '/terms')),

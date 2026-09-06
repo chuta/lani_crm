@@ -9,6 +9,7 @@ const mobileMenuOpen = ref(false)
 const navItems = [
   { path: '/pipeline', label: 'Pipeline', icon: '📋' },
   { path: '/intake', label: 'Intake', icon: '📝' },
+  { path: '/prospecting', label: 'Prospecting', icon: '🔍' },
   { path: '/proposals', label: 'Proposals', icon: '📄' },
   { path: '/executive', label: 'Executive', icon: '👁️' },
   { path: '/archetypes', label: 'Archetypes', icon: '📚' },
