@@ -13,6 +13,13 @@
   # Service role, database password, and API keys stay scanned.
   SECRETS_SCAN_OMIT_KEYS = "SUPABASE_URL,SUPABASE_PROJECT_REF,SUPABASE_ANON_KEY,NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,VITE_SUPABASE_URL,VITE_SUPABASE_ANON_KEY"
 
+# The Express API runs on Fly. The browser keeps calling /api on this site.
+[[redirects]]
+  from = "/api/*"
+  to = "https://lani-crm-api.fly.dev/api/:splat"
+  status = 200
+  force = true
+
 # Hashed bundles and files from web/public.
 [[redirects]]
   from = "/partnerships/assets/*"

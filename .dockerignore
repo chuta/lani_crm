@@ -1,0 +1,13 @@
+.git
+node_modules
+**/node_modules
+web/dist
+data
+**/.env
+**/.env.*
+!**/.env.example
+.cursor
+.netlify
+*.db
+*.jpeg
+obi*.jpeg
