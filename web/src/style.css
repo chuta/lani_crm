@@ -61,4 +61,20 @@
   .stat-label {
     @apply text-sm text-gray-400 mt-1;
   }
+
+  .btn-lani {
+    @apply w-full bg-lani-green hover:bg-lani-dark text-white font-semibold py-2.5 px-4 rounded-lg transition-colors duration-200 disabled:bg-stone-200 disabled:text-stone-500 disabled:cursor-not-allowed;
+  }
+
+  .auth-shell .input-field {
+    @apply bg-white border-stone-200 text-stone-900 placeholder-stone-400 focus:ring-lani-green/30 focus:border-lani-green;
+  }
+
+  .auth-shell .label {
+    @apply text-stone-600;
+  }
+
+  .auth-shell .card {
+    @apply bg-white border-stone-200 shadow-none;
+  }
 }

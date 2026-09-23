@@ -1,54 +1,62 @@
 /**
- * Executive (Mamadou) View — Section 5.2
- * GET /api/executive — Simplified overview for leadership
+ * Executive view — pipeline by lane, archetype, trigger, and conversion.
  */
 
 import { Router, type Request, type Response } from 'express';
 import db from '../db.js';
-import { PIPELINE_STAGES, type ArchetypeId } from '../types.js';
+import { COMMERCIAL_LANES, CONVERSION_STAGES, conversionStageLabel } from '../catalog.js';
+import { DEAL_SELECT, shapeDeal } from '../services/account-book.js';
 
 const router = Router();
 
 router.get('/', (_req: Request, res: Response): void => {
   try {
-    // 1. Queue overview — all active deals sorted by priority
-    const allActive = db.prepare(`
-      SELECT id, partner_name, archetype, priority_score, queue_position,
-             current_stage, blocking_factor, bd_owner, tech_owner, created_at
-      FROM deals
-      WHERE is_archived = 0
-      ORDER BY queue_position ASC
-    `).all();
+    const allActive = (db.prepare(`
+      ${DEAL_SELECT}
+      WHERE d.is_archived = 0
+      ORDER BY d.priority_score DESC, d.created_at DESC
+    `).all() as any[]).map(shapeDeal);
 
-    // 2. Bottleneck analysis — deals stuck in a stage (no progress)
-    const stuckDeals = (allActive as any[]).filter(d => d.blocking_factor);
+    const stuckDeals = allActive.filter((d: any) => d.blocking_factor || d.current_stage === 8);
 
-    // 3. Stage funnel — how many deals in each stage
-    const funnel = PIPELINE_STAGES.map(s => {
-      const count = db.prepare(
-        'SELECT COUNT(*) as c FROM deals WHERE current_stage = ? AND is_archived = 0'
-      ).get(s.id) as any;
+    const funnel = CONVERSION_STAGES.map((s) => {
+      const count = allActive.filter((d: any) => d.current_stage === s.id).length;
       return {
         stage_id: s.id,
-        stage_name: s.name,
+        stage_name: s.label,
         owner: s.owner,
-        count: count?.c || 0,
+        count,
       };
     });
 
-    // 4. Archetype distribution
+    const lanes = COMMERCIAL_LANES.map((lane) => ({
+      id: lane.id,
+      name: lane.name,
+      short: lane.short,
+      horizon: lane.horizon,
+      count: allActive.filter((d: any) => d.lane === lane.id).length,
+    }));
+
     const archetypeDist = db.prepare(`
       SELECT archetype, COUNT(*) as count
       FROM deals WHERE is_archived = 0
       GROUP BY archetype ORDER BY archetype
     `).all();
 
-    // 5. Priority distribution (low/med/high buckets)
+    const triggerDist = db.prepare(`
+      SELECT COALESCE(NULLIF(a.trigger_event, ''), 'Unspecified') as trigger_event, COUNT(*) as count
+      FROM deals d
+      LEFT JOIN accounts a ON a.id = d.account_id
+      WHERE d.is_archived = 0
+      GROUP BY COALESCE(NULLIF(a.trigger_event, ''), 'Unspecified')
+      ORDER BY count DESC
+    `).all();
+
     const priorityBuckets = db.prepare(`
       SELECT
         CASE
-          WHEN priority_score >= 3 THEN 'high'
-          WHEN priority_score >= 1.5 THEN 'medium'
+          WHEN priority_score >= 4 THEN 'high'
+          WHEN priority_score >= 3 THEN 'medium'
           ELSE 'low'
         END as bucket,
         COUNT(*) as count,
@@ -57,53 +65,70 @@ router.get('/', (_req: Request, res: Response): void => {
       GROUP BY bucket
     `).all();
 
-    // 6. "What would move this one faster" — suggestion for each stuck deal
-    const suggestions = (stuckDeals as any[]).map((d: any) => {
+    const bottlenecks = stuckDeals.map((d: any) => {
       let suggestion = '';
-      const stage = PIPELINE_STAGES.find(s => s.id === d.current_stage);
-      if (d.blocking_factor?.toLowerCase().includes('bsilc')) {
-        suggestion = 'Escalate BSILC review — flag to Mamadou or Compliance lead for expedited sign-off';
+      if (d.current_stage === 8) {
+        suggestion = 'On hold — confirm whether to restart the conversation or archive.';
+      } else if (!d.decision_maker && (d.current_stage <= 3)) {
+        suggestion = 'No decision-maker named — this is an access problem, not a delivery problem.';
+      } else if (!d.account_next_action) {
+        suggestion = 'Set a next action and expected decision date so this does not stall.';
       } else if (d.blocking_factor?.toLowerCase().includes('legal')) {
-        suggestion = 'Legal review bottleneck — schedule a joint call with Legal and BD to resolve terms';
-      } else if (d.blocking_factor?.toLowerCase().includes('tech') || d.blocking_factor?.toLowerCase().includes('eng')) {
-        suggestion = 'Engineering capacity constraint — review if this can be fast-tracked via template reuse';
-      } else if (d.current_stage === 3) {
-        suggestion = 'Awaiting Tech triage — escalate to Product/Technology lead via weekly triage forum';
-      } else if (!d.tech_owner) {
-        suggestion = 'No Tech owner assigned — assign one to unblock next-stage progression';
+        suggestion = 'Legal or contracting bottleneck — schedule a joint review with the relationship owner.';
+      } else if (d.consortium_required) {
+        suggestion = 'Consortium required — name the delivery partner before promising scope.';
       } else {
-        suggestion = `Review blocking factor "${d.blocking_factor}" in weekly triage forum`;
+        suggestion = `Review "${d.blocking_factor}" with ${d.bd_owner || 'the relationship owner'}.`;
       }
       return {
         deal_id: d.id,
         partner_name: d.partner_name,
         current_stage: d.current_stage,
-        stage_name: stage?.name || 'Unknown',
-        blocking_factor: d.blocking_factor,
+        stage_name: conversionStageLabel(d.current_stage),
+        lane: d.lane,
+        blocking_factor: d.blocking_factor || (d.current_stage === 8 ? 'On hold' : null),
         suggestion,
       };
     });
 
-    // 7. Summary counts
-    const totalDeals = (allActive as any[]).length;
-    const needsTriage = (allActive as any[]).filter(d => d.current_stage === 3).length;
-    const highPriority = (allActive as any[]).filter(d =>
-      d.priority_score && d.priority_score >= 3
+    const working = allActive.filter((d: any) => d.current_stage >= 2 && d.current_stage <= 5).length;
+    const inConversation = allActive.filter((d: any) => d.current_stage === 3).length;
+    const atProposal = allActive.filter((d: any) => d.current_stage === 4 || d.current_stage === 5).length;
+    const won = allActive.filter((d: any) => d.current_stage === 6).length;
+    const highPriority = allActive.filter((d: any) => d.priority_score && d.priority_score >= 4).length;
+    const missingNextAction = allActive.filter((d: any) =>
+      d.conversion_gaps?.includes('next_action')
     ).length;
-    const hasBlocker = stuckDeals.length;
+    const unnamedConsortium = allActive.filter((d: any) =>
+      d.conversion_gaps?.includes('delivery_partner')
+    ).length;
+    const ecosystemPartners = (db.prepare(`
+      SELECT COUNT(*) as count FROM accounts
+      WHERE is_archived = 0 AND partnership_role != 'end_client'
+    `).get() as { count: number }).count;
 
     res.json({
       ok: true,
       queue: allActive,
       funnel,
+      lanes,
       archetype_distribution: archetypeDist,
+      trigger_distribution: triggerDist,
       priority_distribution: priorityBuckets,
-      bottlenecks: suggestions,
+      bottlenecks,
       summary: {
-        total_active_deals: totalDeals,
-        awaiting_triage: needsTriage,
+        total_active_deals: allActive.length,
+        working,
+        in_conversation: inConversation,
+        at_proposal: atProposal,
+        won,
         high_priority: highPriority,
-        blocked_deals: hasBlocker,
+        stalled: stuckDeals.length,
+        awaiting_triage: allActive.filter((d: any) => d.current_stage <= 2).length,
+        blocked_deals: stuckDeals.length,
+        missing_next_action: missingNextAction,
+        unnamed_consortium: unnamedConsortium,
+        ecosystem_partners: ecosystemPartners,
       },
     });
   } catch (e: any) {

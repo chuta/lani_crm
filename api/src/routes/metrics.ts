@@ -58,11 +58,11 @@ router.get('/', (_req: Request, res: Response): void => {
         COUNT(*) as launched_count,
         AVG(
           (julianday(
-            (SELECT MIN(created_at) FROM stage_transitions WHERE deal_id = d.id AND to_stage = 8)
+            (SELECT MIN(created_at) FROM stage_transitions WHERE deal_id = d.id AND to_stage = 6)
           ) - julianday(d.created_at))
         ) as avg_days
       FROM deals d
-      WHERE d.current_stage >= 8 AND d.is_archived = 0
+      WHERE d.current_stage = 6 AND d.is_archived = 0
       GROUP BY d.archetype
     `).all();
 

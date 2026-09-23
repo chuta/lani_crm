@@ -1,13 +1,14 @@
 /** CPO API bindings — extend the existing api object */
 
 import type { ProposalDetail, DashboardData, ClaimRecord } from './cpo-types';
+import { apiFetch } from './http';
 
 const BASE = '/api/partnerships';
 
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+  const res = await apiFetch(`${BASE}${path}`, {
     ...options,
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'unknown' }));
@@ -41,7 +42,7 @@ export const cpoApi = {
   archiveProposal: (id: string) =>
     req<{ ok: boolean }>(`/proposals/${id}`, { method: 'DELETE', body: JSON.stringify({}) }),
   generateDocument: async (id: string): Promise<{ ok: true; document?: string; version?: number } | { ok: false; error: string; blockers?: { name: string; detail: string }[] }> => {
-    const res = await fetch(`${BASE}/proposals/${id}/generate`, {
+    const res = await apiFetch(`${BASE}/proposals/${id}/generate`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
     });
     if (!res.ok) {
@@ -53,7 +54,7 @@ export const cpoApi = {
 
   /* ─── Export DOCX ─── */
   exportDocx: async (id: string): Promise<{ ok: true; blob: Blob; filename: string } | { ok: false; error: string; blockers?: { name: string; detail: string }[] }> => {
-    const res = await fetch(`${BASE}/proposals/${id}/export-docx`, {
+    const res = await apiFetch(`${BASE}/proposals/${id}/export-docx`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
     });
     if (!res.ok) {

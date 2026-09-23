@@ -1,383 +1,51 @@
 /**
- * Seed data: 7 archetype library entries + 2 pilot deals
- * Idempotent — safe to run multiple times.
+ * Seed the LANI client archetype library. Idempotent. Never seeds $GIFT deals.
  */
 
 import db from './db.js';
-
-const ARCHETYPE_SEEDS = [
-  {
-    id: 'I',
-    name: 'Embedded Account / Dashboard',
-    one_line_test: 'Does the partner\'s own platform need to show individual customers their GIFT balance and let them transact?',
-    effort_tier: 2.5,
-    description: 'SSO federation, individual KYC, live balance/transaction API. Medium-High effort.',
-    standard_components: JSON.stringify([
-      'OAuth2 / SSO session federation with the partner\'s existing login',
-      'KYC verification API, with consented data pre-fill from the partner to reduce duplicate onboarding',
-      'Balance API plus webhook for near-real-time updates',
-      'Live pricing feed API (USD-equivalent)',
-      'Transaction API for Receive and Send requests',
-      'Notification integration for transaction and KYC status',
-    ]),
-    precedent_name: 'Ubuntu Tribe × Lifestyle Hub $GIFT Integration Proposal',
-    precedent_template: [
-      '# Archetype I — Embedded Account / Dashboard Integration Template',
-      '',
-      '## Partner Overview',
-      '- **Partner Name:** {{partner_name}}',
-      '- **Sector:** {{sector}}',
-      '- **Deal Stage:** {{deal_stage}}',
-      '',
-      '## Integration Scope',
-      'This integration enables {{partner_name}}\'s platform to display individual customer GIFT balances and facilitate transactions, embedded within their existing user experience.',
-      '',
-      '## Standard Components (pre-designed, no engineering design required)',
-      '### 1. SSO Federation',
-      '- OAuth2 / OpenID Connect flow with {{partner_name}}\'s existing login system',
-      '- Session lifetime configurable per partner policy',
-      '',
-      '### 2. KYC Verification',
-      '- Ubuntu Tribe KYC API integration for end-customer verification',
-      '- Optional: consented pre-fill from {{partner_name}}\'s existing KYC data',
-      '',
-      '### 3. Balance & Transactions',
-      '- REST API for real-time GIFT balance queries',
-      '- Webhook subscriptions for balance changes (send/receive events)',
-      '- Transaction API (Receive GIFT, Send GIFT) with confirmation callbacks',
-      '',
-      '### 4. Pricing',
-      '- Live pricing feed (USD-equivalent) via Ubuntu Tribe Price API',
-      '',
-      '## Delivery Milestones',
-      '1. SSO integration (staging)',
-      '2. KYC API connection + data pre-fill',
-      '3. Balance API + webhooks',
-      '4. Transaction API (receive only → full send/receive)',
-      '5. UAT with {{partner_name}}\'s selected user cohort',
-      '6. Production go-live',
-      '',
-      '## Risk Notes',
-      '- KYC data sharing requires BSILC sign-off before any data moves between systems',
-      '- SSO session timeout configuration must comply with Ubuntu Tribe security policy',
-      '- Transaction limits apply per standard Ubuntu Tribe risk policies',
-    ].join('\n'),
-  },
-  {
-    id: 'II',
-    name: 'Institutional Custody / Fund Wrapper',
-    one_line_test: 'Is the partner a licensed asset manager pooling client money into a fund that holds GIFT?',
-    effort_tier: 1.5,
-    description: 'Single institutional custody account. Partner runs its own client-facing layer. Low-Medium effort.',
-    standard_components: JSON.stringify([
-      'Single institutional custody account (the partner\'s fund, not per-client accounts)',
-      'NAV / reporting API for the fund\'s own administration to consume',
-      'No consumer-facing UI build required',
-      'Trustee / Registrar coordination sits with the partner',
-      'BSILC compliance review for institutional fund structure',
-    ]),
-    precedent_name: 'Institutional Commercial Playbook v1.0; UBA Asset Management GIFT Commercial Proposal',
-    precedent_template: [
-      '# Archetype II — Institutional Custody / Fund Wrapper Template',
-      '',
-      '## Partner Overview',
-      '- **Partner Name:** {{partner_name}}',
-      '- **License/Regulator:** {{regulator}}',
-      '- **Fund Structure:** {{fund_structure}} (e.g. CIS, mutual fund, closed-end)',
-      '',
-      '## Integration Scope',
-      'Single institutional custody account holding GIFT on behalf of the partner\'s pooled fund. The partner manages all client-facing relationships through their existing fund administration. Ubuntu Tribe provides NAV reporting and redemption/issuance APIs.',
-      '',
-      '## Standard Components',
-      '### 1. Institutional Custody Account',
-      '- One account, not per-client accounts',
-      '- The partner\'s fund is the sole beneficial owner on Ubuntu Tribe\'s records',
-      '',
-      '### 2. NAV / Reporting API',
-      '- Daily NAV snapshot for the fund\'s administration to reconcile',
-      '- Transaction history for audit trail',
-      '',
-      '### 3. Redemption & Issuance',
-      '- Partner submits fund-level subscription/redemption orders',
-      '- Settlement within Ubuntu Tribe\'s standard T+1 cycle',
-      '',
-      '### 4. Compliance',
-      '- BSILC review of fund structure and investor eligibility',
-      '- Trustee/Registrar coordination handled by partner',
-      '- Regulatory filings per CIS structure (partner\'s responsibility)',
-      '',
-      '## Delivery Approach',
-      '- Single-phase delivery (no phasing needed — archetype\'s scope is narrow)',
-      '- UAT: partner\'s fund admin team tests NAV reporting and order flow',
-      '',
-      '## Risk Notes',
-      '- Confirm partner holds valid asset management license before scoping',
-      '- Trustee relationship must be documented in the commercial agreement',
-      '- Fund documentation must specify GIFT as a permissible asset class',
-    ].join('\n'),
-  },
-  {
-    id: 'III',
-    name: 'Payment Rails / Infrastructure',
-    one_line_test: 'Does this partner move money for us, eg. mobile money, banking rails, OTC, treasury?',
-    effort_tier: 3,
-    description: 'The broadest, most bespoke build. Multiple rails, phased delivery. High effort.',
-    standard_components: JSON.stringify([
-      'Mobile money integration (e.g. M-Pesa, Airtel Money)',
-      'Banking rail integration (e.g. Pesalink, RTGS, SWIFT)',
-      'OTC functionality via API',
-      'FX conversion and treasury/liquidity management, with counterparty limits',
-      'Phased delivery against UAT milestones',
-    ]),
-    precedent_name: 'Swypt MSA, Schedule 1 Part B (Delivery Milestones and UAT)',
-    precedent_template: [
-      '# Archetype III — Payment Rails / Infrastructure Template',
-      '',
-      '## Partner Overview',
-      '- **Partner Name:** {{partner_name}}',
-      '- **Payment Method:** {{payment_method}} (mobile money / banking / OTC / multi-rail)',
-      '- **Geographies:** {{geographies}}',
-      '',
-      '## Integration Scope',
-      'Connection to {{partner_name}}\'s payment infrastructure so end-users can fund and withdraw from their GIFT wallet via local payment methods.',
-      '',
-      '## Standard Components (design required per-rail)',
-      '### 1. Mobile Money Integration',
-      '- API connection to {{partner_name}}\'s mobile money gateway (STK Push, USSD, or API)',
-      '- Transaction status webhooks',
-      '- Settlement reconciliation',
-      '',
-      '### 2. Banking Rail Integration',
-      '- Bank account link for large-value transactions',
-      '- Real-time vs. batch settlement model',
-      '',
-      '### 3. OTC / Treasury',
-      '- Large trade API for institutional users',
-      '- Counterparty limits and liquidity management',
-      '- Daily reconciliation',
-      '',
-      '## Delivery Phasing (use Swypt Schedule 1 Part B pattern)',
-      'Phase 1: Mobile money in → GIFT wallet (inbound only)',
-      'Phase 2: GIFT wallet → Mobile money out (full cycle)',
-      'Phase 3: Banking rails + OTC',
-      'Phase 4: Treasury/liquidity automation',
-      '',
-      '## Risk Notes',
-      '- Each phase has its own UAT milestone; no single go-live event',
-      '- Counterparty credit limits require treasury sign-off',
-      '- FX conversion requires real-time rate feed integration',
-      '- Regulatory approval needed per jurisdiction for payment services',
-    ].join('\n'),
-  },
-  {
-    id: 'IV',
-    name: 'Card Acceptance / Payment Gateway',
-    one_line_test: 'Does this let $GIFT-funded customers pay merchants via card?',
-    effort_tier: 2,
-    description: 'Gateway/acquiring integration so GIFT-funded value can pay merchants. Medium effort.',
-    standard_components: JSON.stringify([
-      'Card acquiring / gateway API integration',
-      'PCI-DSS compliance scoping',
-      'Merchant category code configuration',
-      'Sponsor-bank relationship verification',
-    ]),
-    precedent_name: 'Gladys Technologies Business Case',
-    precedent_template: [
-      '# Archetype IV — Card Acceptance / Payment Gateway Template',
-      '',
-      '## Partner Overview',
-      '- **Partner Name:** {{partner_name}}',
-      '- **Acquiring Model:** (direct / sponsor-bank / gateway)',
-      '- **Geographies:** {{geographies}}',
-      '',
-      '## Integration Scope',
-      'Enable merchants to accept card payments funded by GIFT wallets, with settlement in fiat or GIFT.',
-      '',
-      '## Standard Components',
-      '### 1. Gateway/Acquiring API Integration',
-      '- Partner\'s gateway API for merchant transaction processing',
-      '- Settlement file processing (batch or real-time)',
-      '',
-      '### 2. PCI-DSS',
-      '- Scope assessment: who handles card data, how',
-      '- SAQ or QSA audit requirements per merchant volume',
-      '',
-      '### 3. Sponsor Bank',
-      '- **CRITICAL: Confirm sponsorship status before scoping**',
-      '- Single point of failure risk — if the sponsor bank relationship changes, the integration breaks',
-      '',
-      '## Delivery Approach',
-      '- Single-phase delivery after sponsor bank confirmation',
-      '- UAT with 3-5 test merchants before full rollout',
-      '',
-      '## Risk Notes',
-      '- Sponsor bank relationship is the #1 risk factor',
-      '- PCI-DSS scope must be established BEFORE any integration work',
-      '- Merchant category codes (MCC) affect interchange rates — confirm with acquirer',
-    ].join('\n'),
-  },
-  {
-    id: 'V',
-    name: 'Card Issuance',
-    one_line_test: 'Does this partner issue a branded card to GIFT holders for spending?',
-    effort_tier: 2.5,
-    description: 'Opposite direction from Archetype IV — the partner issues cards, not accepts them. Medium-High effort.',
-    standard_components: JSON.stringify([
-      'BIN sponsorship coordination with a named issuing bank',
-      'Card issuance API (virtual and/or physical)',
-      'Wallet infrastructure for the issued card',
-      'Cardholder KYC/AML responsibility assignment',
-    ]),
-    precedent_name: 'BananaTech Business Case (pending diligence clearance)',
-    precedent_template: [
-      '# Archetype V — Card Issuance Template',
-      '',
-      '## Partner Overview',
-      '- **Partner Name:** {{partner_name}}',
-      '- **Card Type:** (virtual / physical / both)',
-      '- **BIN Sponsor:** {{bin_sponsor}}',
-      '- **Program Manager:** {{program_manager}}',
-      '',
-      '## Integration Scope',
-      'Issue branded cards (virtual and/or physical) to GIFT wallet holders, enabling spend at any merchant that accepts the card network.',
-      '',
-      '## Standard Components',
-      '### 1. BIN Sponsorship',
-      '- Issuing bank agreement (confirm sponsor before scoping)',
-      '- BIN allocation for the card program',
-      '',
-      '### 2. Card Issuance API',
-      '- Virtual card creation (instant)',
-      '- Physical card production and shipping',
-      '',
-      '### 3. Wallet Integration',
-      '- Card linked to the GIFT wallet as the funding source',
-      '- Real-time balance checks at POS/ATM',
-      '',
-      '### 4. KYC/AML',
-      '- Confirm who owns KYC (issuing bank, program manager, or Ubuntu Tribe/BSILC)',
-      '- This must be resolved BEFORE scoping',
-      '',
-      '## Delivery Approach',
-      '- Phase 1: Virtual card issuance (faster go-live)',
-      '- Phase 2: Physical card + wallet integration',
-      '',
-      '## Risk Notes',
-      '- ⚠️ PENDING DILIGENCE — BananaTech diligence findings must be resolved before using this as a clean precedent',
-      '- BIN sponsorship is the critical dependency',
-      '- KYC ownership ambiguity can block launch',
-    ].join('\n'),
-  },
-  {
-    id: 'VI',
-    name: 'Exchange Listing / Liquidity',
-    one_line_test: 'Does GIFT trade on this partner\'s own exchange?',
-    effort_tier: 1.5,
-    description: 'Minimal ongoing API embed. Real weight sits in listing diligence and treasury risk. Low-Medium (eng) / High (legal-treasury).',
-    standard_components: JSON.stringify([
-      'Listing diligence pack (regulator-grade scrutiny)',
-      'Treasury counterparty limits, hard caps, tenor limits, daily reconciliation',
-      'Market surveillance coordination with the exchange',
-      'Competitive firewall protocol (where exchange is also a partial competitor)',
-    ]),
-    precedent_name: 'Yellow Card Business Case, Appendices B-D',
-    precedent_template: [
-      '# Archetype VI — Exchange Listing / Liquidity Template',
-      '',
-      '## Partner Overview',
-      '- **Exchange:** {{partner_name}}',
-      '- **Jurisdiction:** {{jurisdiction}}',
-      '- **Regulatory Status:** {{regulatory_status}}',
-      '- **Trading Pair:** {{trading_pair}} (e.g. GIFT/USDT)',
-      '',
-      '## Integration Scope',
-      'List GIFT on {{partner_name}}\'s exchange for trading. Engineering work is minimal; the heavy lift is listing diligence and treasury risk management.',
-      '',
-      '## Standard Components',
-      '### 1. Listing Diligence Pack',
-      '- Tokenomics summary',
-      '- Smart contract audit reports',
-      '- Team and legal entity docs',
-      '- Market-making plan',
-      '- Compliance assessment for exchange\'s jurisdiction',
-      '',
-      '### 2. Treasury & Counterparty Risk',
-      '- Hard cap on deposit balance at the exchange',
-      '- Tenor limits on open positions',
-      '- Daily reconciliation of on-chain vs. exchange balances',
-      '',
-      '### 3. Market Surveillance',
-      '- Coordinate with exchange\'s surveillance team',
-      '- Flag suspicious trading patterns',
-      '- Price manipulation detection thresholds',
-      '',
-      '### 4. Competitive Firewall',
-      '- If the exchange also offers competing token products',
-      '- Information barriers between Ubuntu Tribe and exchange\'s listing team',
-      '',
-      '## Risk Notes',
-      '- Treasury limits are the primary risk control — set before first deposit',
-      '- Listing diligence is a rehearsal for regulator-grade scrutiny — treat it seriously',
-      '- Daily reconciliation is mandatory, not optional',
-      '- Competitive firewalls must be documented in the listing agreement',
-    ].join('\n'),
-  },
-  {
-    id: 'VII',
-    name: 'Non-Technical / Zero-Integration',
-    one_line_test: 'Is this a commercial, CSR, or advocacy relationship with no API or platform touchpoint at all?',
-    effort_tier: 0.5,
-    description: 'No technical components. BD closes independently. No Tech queue entry needed.',
-    standard_components: JSON.stringify([
-      'No technical components — this is the point',
-      'BD closes independently without Tech/Product sign-off',
-    ]),
-    precedent_name: 'She\'s Included CSR Strategy & Letter Template',
-    precedent_template: [
-      '# Archetype VII — Non-Technical / Zero-Integration Template',
-      '',
-      '## Partner Overview',
-      '- **Partner Name:** {{partner_name}}',
-      '- **Partnership Type:** (CSR / advocacy / commercial / media / sponsorship)',
-      '',
-      '## No Integration Required',
-      'This partnership has no API or platform touchpoint. It is closed entirely by BD without Product & Technology involvement.',
-      '',
-      '## BD Checklist',
-      '- [ ] Partnership agreement signed',
-      '- [ ] Brand guidelines shared (if co-branded materials)',
-      '- [ ] Communications schedule confirmed',
-      '- [ ] No technical resources required from Tech/Product',
-      '',
-      '## Why This Matters',
-      'Archetype VII exists deliberately. Recognising "no integration needed" is a triage win — it keeps the Tech queue clean for deals that genuinely need engineering time.',
-    ].join('\n'),
-  },
-];
+import { CLIENT_ARCHETYPES } from './catalog.js';
+import { seedFeeBands } from './services/fee-bands.js';
+import { seedCoachStalls } from './services/coach-stalls.js';
 
 export default function seedArchetypes(): void {
-  const existing = db.prepare('SELECT COUNT(*) as c FROM archetype_library').get() as any;
+  const existing = db.prepare('SELECT COUNT(*) as c FROM archetype_library').get() as { c: number };
   if (existing && existing.c > 0) {
-    console.log('[seed] Archetype library already seeded, skipping');
-    return;
+    console.log('[seed] LANI archetype library already seeded, skipping');
+  } else {
+    const stmt = db.prepare(`
+      INSERT INTO archetype_library (
+        id, name, one_line_test, typical_organisations, problems, lani_opportunity,
+        entry_point, commercial_trigger, description
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const insertMany = db.transaction((rows: typeof CLIENT_ARCHETYPES) => {
+      for (const row of rows) {
+        stmt.run(
+          row.id,
+          row.name,
+          row.one_line_test,
+          JSON.stringify(row.typical_organisations),
+          JSON.stringify(row.problems),
+          JSON.stringify(row.lani_opportunity),
+          row.entry_point,
+          row.commercial_trigger,
+          row.description,
+        );
+      }
+    });
+
+    insertMany(CLIENT_ARCHETYPES);
+    console.log(`[seed] Seeded ${CLIENT_ARCHETYPES.length} LANI client archetypes (A–F)`);
   }
 
-  const stmt = db.prepare(`
-    INSERT INTO archetype_library (id, name, one_line_test, effort_tier, description, standard_components, precedent_name, precedent_template)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `);
+  const feeInserted = seedFeeBands();
+  if (feeInserted > 0) {
+    console.log(`[seed] Seeded ${feeInserted} LANI fee bands`);
+  }
 
-  const insertMany = db.transaction((rows: typeof ARCHETYPE_SEEDS) => {
-    for (const row of rows) {
-      stmt.run(row.id, row.name, row.one_line_test, row.effort_tier, row.description, row.standard_components, row.precedent_name, row.precedent_template);
-    }
-  });
-
-  insertMany(ARCHETYPE_SEEDS);
-  console.log(`[seed] Seeded ${ARCHETYPE_SEEDS.length} archetype library entries`);
-}
-
-// If run directly: seed only
-if (process.argv[1]?.endsWith('seed.ts') || process.argv[1]?.endsWith('seed.js')) {
-  import('./db.js').then(() => seedArchetypes());
+  const stallInserted = seedCoachStalls();
+  if (stallInserted > 0) {
+    console.log(`[seed] Seeded ${stallInserted} LANI stall reasons`);
+  }
 }

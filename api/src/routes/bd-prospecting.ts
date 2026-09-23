@@ -17,6 +17,7 @@
 import { Router, type Request, type Response } from 'express';
 import db from '../db.js';
 import { randomUUID } from 'node:crypto';
+import { requireRootAdmin } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -239,31 +240,13 @@ router.delete('/:id', (req: Request, res: Response): void => {
 });
 
 /** ─── SEED ─── */
-router.post('/seed', (_req: Request, res: Response): void => {
-  try {
-    const existing = (db.prepare('SELECT COUNT(*) as c FROM bd_prospecting_targets').get() as any).c;
-    if (existing > 0) {
-      res.json({ ok: true, skipped: true, message: `Already seeded with ${existing} targets` });
-      return;
-    }
-
-    const stmt = db.prepare(`
-      INSERT INTO bd_prospecting_targets (id, firm_name, tier, category, why_this_fits, contact_email, status, special_flags, notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    const seedData = getSeedData();
-    const insertMany = db.transaction((rows: typeof seedData) => {
-      for (const r of rows) stmt.run(r.id, r.firm_name, r.tier, r.category, r.why_this_fits, r.contact_email, r.status, r.special_flags, r.notes);
-    });
-    insertMany(seedData);
-
-    const count = (db.prepare('SELECT COUNT(*) as c FROM bd_prospecting_targets').get() as any).c;
-    res.json({ ok: true, seeded: count, message: `Seeded ${count} prospecting targets` });
-  } catch (e: any) {
-    console.error('[bd-prospecting] Seed error:', e);
-    res.status(500).json({ error: 'seed_failed', details: e.message });
-  }
+router.post('/seed', requireRootAdmin, (_req: Request, res: Response): void => {
+  res.json({
+    ok: true,
+    skipped: true,
+    frozen: true,
+    message: 'GIFT prospect seed is frozen. Start from a clean LANI book and add accounts manually.',
+  });
 });
 
 export default router;

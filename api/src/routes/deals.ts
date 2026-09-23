@@ -1,12 +1,5 @@
 /**
- * Deals endpoints
- * GET  /api/deals — List all deals with optional filters
- * GET  /api/deals/:id — Single deal detail with transitions
- * PATCH /api/deals/:id/stage — Advance deal stage
- * PATCH /api/deals/:id/blocker — Update blocking factor
- * PATCH /api/deals/:id/owner — Update owner
- * PATCH /api/deals/:id/priority — Re-score priority
- * DELETE /api/deals/:id — Archive a deal
+ * Deals — qualified opportunities on the consulting conversion path.
  */
 
 import { Router, type Request, type Response } from 'express';
@@ -19,49 +12,116 @@ import {
 import { notifyStageChange } from '../services/notifications.js';
 import { PIPELINE_STAGES } from '../types.js';
 import type { ArchetypeId } from '../types.js';
+import { isConversionStage, isLaneId } from '../catalog.js';
+import {
+  CONVERSION_GAP_LABELS,
+  conversionGaps,
+  DEAL_SELECT,
+  shapeDeal,
+  syncAccountStageFromDeal,
+} from '../services/account-book.js';
 
 const router = Router();
 
-// GET /api/deals — List all deals
+function getDealRow(id: string) {
+  return db.prepare(`${DEAL_SELECT} WHERE d.id = ?`).get(id);
+}
+
+function applyDisciplineFields(id: string, body: any, accountId?: string | null): string[] {
+  const errors: string[] = [];
+  const updates: string[] = [];
+  const params: any[] = [];
+
+  if (body.next_action !== undefined) {
+    updates.push('next_action = ?');
+    params.push(String(body.next_action || '').trim() || null);
+  }
+  if (body.expected_decision_date !== undefined) {
+    updates.push('expected_decision_date = ?');
+    params.push(String(body.expected_decision_date || '').trim() || null);
+  }
+  if (body.delivery_partner_account_id !== undefined) {
+    const partnerId = String(body.delivery_partner_account_id || '').trim() || null;
+    if (partnerId) {
+      const partner = db.prepare('SELECT id FROM accounts WHERE id = ? AND is_archived = 0').get(partnerId);
+      if (!partner) errors.push('delivery_partner_account_id must be an active account');
+      if (accountId && partnerId === accountId) errors.push('An organisation cannot be its own delivery partner');
+    }
+    if (!errors.length) {
+      updates.push('delivery_partner_account_id = ?');
+      params.push(partnerId);
+    }
+  }
+
+  if (!errors.length && updates.length) {
+    updates.push("updated_at = datetime('now')");
+    params.push(id);
+    db.prepare(`UPDATE deals SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  }
+  return errors;
+}
+
 router.get('/', (req: Request, res: Response): void => {
   try {
-    const { archetype, stage, archived, search } = req.query;
+    const { archetype, stage, archived, search, lane, geography } = req.query;
 
-    let sql = 'SELECT * FROM deals WHERE 1=1';
+    let sql = `${DEAL_SELECT} WHERE 1=1`;
     const params: any[] = [];
 
     if (archetype) {
-      sql += ' AND archetype = ?';
+      sql += ' AND d.archetype = ?';
       params.push(archetype);
     }
     if (stage) {
-      sql += ' AND current_stage = ?';
+      sql += ' AND d.current_stage = ?';
       params.push(Number(stage));
     }
+    if (lane) {
+      sql += ` AND COALESCE(d.lane, a.lane, 'immediate') = ?`;
+      params.push(lane);
+    }
+    if (geography) {
+      sql += ' AND d.geography = ?';
+      params.push(geography);
+    }
     if (archived === 'true') {
-      sql += ' AND is_archived = 1';
+      sql += ' AND d.is_archived = 1';
     } else if (archived !== 'all') {
-      sql += ' AND is_archived = 0';
+      sql += ' AND d.is_archived = 0';
     }
     if (search) {
-      sql += ' AND (partner_name LIKE ? OR description LIKE ?)';
-      params.push(`%${search}%`, `%${search}%`);
+      sql += ' AND (d.partner_name LIKE ? OR d.description LIKE ? OR a.organisation LIKE ? OR a.trigger_event LIKE ?)';
+      const q = `%${search}%`;
+      params.push(q, q, q, q);
     }
 
-    sql += ' ORDER BY priority_score DESC, created_at DESC';
+    sql += ` ORDER BY COALESCE(d.lane, a.lane, 'immediate'), d.priority_score DESC, d.created_at DESC`;
 
-    const deals = db.prepare(sql).all(...params);
-    res.json({ ok: true, deals, total: (deals as any[]).length });
+    const deals = (db.prepare(sql).all(...params) as any[]).map(shapeDeal);
+
+    const laneCounts = db.prepare(`
+      SELECT COALESCE(d.lane, a.lane, 'immediate') as lane, COUNT(*) as count
+      FROM deals d
+      LEFT JOIN accounts a ON a.id = d.account_id
+      WHERE d.is_archived = 0
+      GROUP BY COALESCE(d.lane, a.lane, 'immediate')
+    `).all() as { lane: string; count: number }[];
+
+    res.json({
+      ok: true,
+      deals,
+      total: deals.length,
+      lane_counts: Object.fromEntries(laneCounts.map((r) => [r.lane, r.count])),
+    });
   } catch (e: any) {
     console.error('[deals] List error:', e);
-    res.status(500).json({ error: 'internal_error' });
+    res.status(500).json({ error: 'internal_error', message: e?.message });
   }
 });
 
-// GET /api/deals/:id — Single deal detail
 router.get('/:id', (req: Request, res: Response): void => {
   try {
-    const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(req.params.id) as any;
+    const deal = getDealRow(req.params.id) as any;
     if (!deal) {
       res.status(404).json({ error: 'not_found' });
       return;
@@ -71,14 +131,13 @@ router.get('/:id', (req: Request, res: Response): void => {
       'SELECT * FROM stage_transitions WHERE deal_id = ? ORDER BY created_at ASC'
     ).all(req.params.id);
 
-    res.json({ ok: true, deal, transitions });
+    res.json({ ok: true, deal: shapeDeal(deal), transitions });
   } catch (e: any) {
     console.error('[deals] Get error:', e);
     res.status(500).json({ error: 'internal_error' });
   }
 });
 
-// PATCH /api/deals/:id/stage — Advance deal stage
 router.patch('/:id/stage', (req: Request, res: Response): void => {
   try {
     const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(req.params.id) as any;
@@ -90,8 +149,25 @@ router.patch('/:id/stage', (req: Request, res: Response): void => {
     const { stage, triggered_by, note } = req.body;
     const newStage = Number(stage);
 
-    if (newStage < 1 || newStage > 9) {
-      res.status(400).json({ error: 'invalid_stage', message: 'Stage must be 1-9' });
+    if (!isConversionStage(newStage)) {
+      res.status(400).json({ error: 'invalid_stage', message: 'Stage must be 1–8 on the conversion path' });
+      return;
+    }
+
+    const disciplineErrors = applyDisciplineFields(req.params.id, req.body, deal.account_id);
+    if (disciplineErrors.length) {
+      res.status(400).json({ error: 'validation_error', details: disciplineErrors });
+      return;
+    }
+
+    const preview = shapeDeal(getDealRow(req.params.id));
+    const gaps = conversionGaps(preview, newStage);
+    if (gaps.length) {
+      res.status(400).json({
+        error: 'conversion_discipline',
+        details: gaps.map((g) => CONVERSION_GAP_LABELS[g] || g),
+        conversion_gaps: gaps,
+      });
       return;
     }
 
@@ -104,43 +180,43 @@ router.patch('/:id/stage', (req: Request, res: Response): void => {
       'INSERT INTO stage_transitions (deal_id, from_stage, to_stage, triggered_by, note) VALUES (?, ?, ?, ?, ?)'
     ).run(req.params.id, fromStage, newStage, triggered_by || null, note || null);
 
-    // Recompute queue position if score-relevant fields changed
-    const updated = db.prepare('SELECT * FROM deals WHERE id = ?').get(req.params.id) as any;
+    syncAccountStageFromDeal(deal.account_id, newStage);
 
-    // Send Teams notification
-    const stageName = PIPELINE_STAGES.find(s => s.id === newStage);
-    const owner = stageName?.owner || 'Unknown';
+    const updated = getDealRow(req.params.id) as any;
+    const stageName = PIPELINE_STAGES.find((s) => s.id === newStage);
     void notifyStageChange(
       req.params.id,
       updated.partner_name,
       newStage,
-      owner,
+      stageName?.owner || 'BD',
       updated.bd_owner,
       updated.tech_owner
     );
 
-    res.json({ ok: true, deal: updated });
+    res.json({ ok: true, deal: shapeDeal(updated) });
   } catch (e: any) {
     console.error('[deals] Stage error:', e);
     res.status(500).json({ error: 'internal_error' });
   }
 });
 
-// PATCH /api/deals/:id/blocker — Update blocking factor
 router.patch('/:id/blocker', (req: Request, res: Response): void => {
   try {
     const { blocking_factor } = req.body;
     db.prepare('UPDATE deals SET blocking_factor = ?, updated_at = datetime(\'now\') WHERE id = ?')
       .run(blocking_factor || null, req.params.id);
-    const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(req.params.id);
-    res.json({ ok: true, deal });
+    const deal = getDealRow(req.params.id);
+    if (!deal) {
+      res.status(404).json({ error: 'not_found' });
+      return;
+    }
+    res.json({ ok: true, deal: shapeDeal(deal) });
   } catch (e: any) {
     console.error('[deals] Blocker error:', e);
     res.status(500).json({ error: 'internal_error' });
   }
 });
 
-// PATCH /api/deals/:id/owner — Update owner(s)
 router.patch('/:id/owner', (req: Request, res: Response): void => {
   try {
     const { bd_owner, tech_owner } = req.body;
@@ -159,15 +235,14 @@ router.patch('/:id/owner', (req: Request, res: Response): void => {
     params.push(req.params.id);
 
     db.prepare(`UPDATE deals SET ${updates.join(', ')} WHERE id = ?`).run(...params);
-    const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(req.params.id);
-    res.json({ ok: true, deal });
+    const deal = getDealRow(req.params.id);
+    res.json({ ok: true, deal: shapeDeal(deal) });
   } catch (e: any) {
     console.error('[deals] Owner error:', e);
     res.status(500).json({ error: 'internal_error' });
   }
 });
 
-// PATCH /api/deals/:id/priority — Re-score priority
 router.patch('/:id/priority', (req: Request, res: Response): void => {
   try {
     const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(req.params.id) as any;
@@ -193,7 +268,6 @@ router.patch('/:id/priority', (req: Request, res: Response): void => {
       WHERE id = ?
     `).run(revenuePotential, strategicFit, noveltyLevel, noveltyPenalty, priorityScore, req.params.id);
 
-    // Recompute all queue positions
     const allActive = db.prepare(
       'SELECT id, priority_score, is_archived FROM deals WHERE is_archived = 0 ORDER BY priority_score DESC'
     ).all() as { id: string; priority_score: number | null; is_archived: number }[];
@@ -203,16 +277,11 @@ router.patch('/:id/priority', (req: Request, res: Response): void => {
       db.prepare('UPDATE deals SET queue_position = ? WHERE id = ?').run(i + 1, d.id);
     });
 
-    const updated = db.prepare('SELECT * FROM deals WHERE id = ?').get(req.params.id);
     res.json({
       ok: true,
-      deal: updated,
+      deal: shapeDeal(getDealRow(req.params.id)),
       priority_breakdown: {
-        formula: '(Revenue × Strategic Fit) ÷ (Effort Tier × Novelty Penalty)',
-        revenue_potential: revenuePotential,
-        strategic_fit: strategicFit,
-        effort_tier: effortTier,
-        novelty_penalty: noveltyPenalty,
+        formula: 'Internal priority = average of five 1–5 qualification scores (sort only)',
         priority_score: priorityScore,
       },
     });
@@ -222,7 +291,6 @@ router.patch('/:id/priority', (req: Request, res: Response): void => {
   }
 });
 
-// PATCH /api/deals/:id — Update deal fields
 router.patch('/:id', (req: Request, res: Response): void => {
   try {
     const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(req.params.id) as any;
@@ -231,80 +299,78 @@ router.patch('/:id', (req: Request, res: Response): void => {
       return;
     }
 
-    const updatable = [
-      'partner_name', 'sector', 'description', 'bd_owner', 'tech_owner',
-      'urgency', 'compliance_flags', 'is_repeat',
-    ];
-    // Also allow priority fields that trigger re-score
-    const priorityFields = ['revenue_potential', 'strategic_fit', 'novelty_level', 'archetype'];
-    // Allow triage fields (for admin override of triage metadata)
-    const triageFields = ['triage_classification_corrected', 'triage_responded_by'];
-    const allFields = [...updatable, ...priorityFields, ...triageFields];
+    if (req.body.lane !== undefined && req.body.lane !== '' && !isLaneId(req.body.lane)) {
+      res.status(400).json({ error: 'validation_error', details: ['lane is invalid'] });
+      return;
+    }
 
+    const current = shapeDeal(getDealRow(req.params.id));
+    const gaps = conversionGaps({
+      current_stage: current.current_stage,
+      next_action: req.body.next_action !== undefined ? req.body.next_action : current.next_action,
+      expected_decision_date: req.body.expected_decision_date !== undefined
+        ? req.body.expected_decision_date
+        : current.expected_decision_date,
+      consortium_required: current.consortium_required,
+      delivery_partner_account_id: req.body.delivery_partner_account_id !== undefined
+        ? req.body.delivery_partner_account_id
+        : current.delivery_partner_account_id,
+    });
+    if (gaps.length) {
+      res.status(400).json({
+        error: 'conversion_discipline',
+        details: gaps.map((g) => CONVERSION_GAP_LABELS[g] || g),
+        conversion_gaps: gaps,
+      });
+      return;
+    }
+
+    const updatable = [
+      'partner_name', 'sector', 'partnership_role', 'geography', 'description',
+      'bd_owner', 'urgency', 'lane', 'archetype', 'is_repeat',
+    ];
     const updates: string[] = [];
     const params: any[] = [];
 
-    for (const f of allFields) {
+    for (const f of updatable) {
       if (req.body[f] !== undefined) {
         updates.push(`${f} = ?`);
-        params.push(req.body[f]);
+        params.push(req.body[f] === '' ? null : req.body[f]);
       }
     }
 
-    if (updates.length === 0) {
+    const disciplineErrors = applyDisciplineFields(req.params.id, req.body, deal.account_id);
+    if (disciplineErrors.length) {
+      res.status(400).json({ error: 'validation_error', details: disciplineErrors });
+      return;
+    }
+
+    if (updates.length === 0
+      && req.body.next_action === undefined
+      && req.body.expected_decision_date === undefined
+      && req.body.delivery_partner_account_id === undefined) {
       res.status(400).json({ error: 'no_fields' });
       return;
     }
 
-    updates.push("updated_at = datetime('now')");
-    params.push(req.params.id);
-
-    db.prepare(`UPDATE deals SET ${updates.join(', ')} WHERE id = ?`).run(...params);
-
-    // Re-score priority if any priority fields changed
-    const hasPriorityChange = priorityFields.some(f => req.body[f] !== undefined);
-    const hasTriageChange = triageFields.some(f => req.body[f] !== undefined);
-    if (hasPriorityChange || hasTriageChange) {
-      const updated = db.prepare('SELECT * FROM deals WHERE id = ?').get(req.params.id) as any;
-
-      // If triage was explicitly set, mark the response timestamp
-      if (hasTriageChange && req.body.triage_classification_corrected) {
-        db.prepare('UPDATE deals SET triage_response_at = COALESCE(triage_response_at, datetime(\'now\')) WHERE id = ?')
-          .run(req.params.id);
-      }
-
-      const effortTier = getArchetypeEffortTier(updated.archetype as ArchetypeId);
-      const noveltyPenalty = getNoveltyPenalty(updated.novelty_level);
-      const priorityScore = computePriorityScore(
-        updated.revenue_potential, updated.strategic_fit, effortTier, noveltyPenalty
-      );
-      db.prepare('UPDATE deals SET effort_tier = ?, novelty_penalty = ?, priority_score = ? WHERE id = ?')
-        .run(effortTier, noveltyPenalty, priorityScore, req.params.id);
-
-      // Recompute queue positions
-      const allActive = db.prepare(
-        'SELECT id, priority_score FROM deals WHERE is_archived = 0 ORDER BY priority_score DESC'
-      ).all() as { id: string; priority_score: number | null }[];
-      allActive.sort((a, b) => ((b.priority_score ?? 0) - (a.priority_score ?? 0)));
-      allActive.forEach((d, i) => {
-        db.prepare('UPDATE deals SET queue_position = ? WHERE id = ?').run(i + 1, d.id);
-      });
+    if (updates.length) {
+      updates.push("updated_at = datetime('now')");
+      params.push(req.params.id);
+      db.prepare(`UPDATE deals SET ${updates.join(', ')} WHERE id = ?`).run(...params);
     }
 
-    const updated = db.prepare('SELECT * FROM deals WHERE id = ?').get(req.params.id);
-    res.json({ ok: true, deal: updated });
+    res.json({ ok: true, deal: shapeDeal(getDealRow(req.params.id)) });
   } catch (e: any) {
     console.error('[deals] Update error:', e);
     res.status(500).json({ error: 'internal_error' });
   }
 });
 
-// DELETE /api/deals/:id — Archive a deal
 router.delete('/:id', (req: Request, res: Response): void => {
   try {
     db.prepare('UPDATE deals SET is_archived = 1, updated_at = datetime(\'now\') WHERE id = ?')
       .run(req.params.id);
-    res.json({ ok: true, message: 'Deal archived' });
+    res.json({ ok: true, message: 'Opportunity archived' });
   } catch (e: any) {
     console.error('[deals] Archive error:', e);
     res.status(500).json({ error: 'internal_error' });

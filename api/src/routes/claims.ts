@@ -5,6 +5,7 @@
 
 import { Router, type Request, type Response } from 'express';
 import db from '../db.js';
+import { requireRootAdmin } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -22,7 +23,7 @@ router.get('/:id', (req: Request, res: Response) => {
 });
 
 /* ─── Create claim ─── */
-router.post('/', (req: Request, res: Response) => {
+router.post('/', requireRootAdmin, (req: Request, res: Response) => {
   const { id, category, claim, evidence_url, jurisdiction, version, effective_date, review_date, owner } = req.body;
   if (!id || !category || !claim) {
     return res.status(400).json({ ok: false, error: 'id, category, and claim are required' });
@@ -35,7 +36,7 @@ router.post('/', (req: Request, res: Response) => {
 });
 
 /* ─── Update claim ─── */
-router.patch('/:id', (req: Request, res: Response) => {
+router.patch('/:id', requireRootAdmin, (req: Request, res: Response) => {
   const existing = db.prepare('SELECT * FROM proposal_claims_library WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ ok: false, error: 'Claim not found' });
 
@@ -60,13 +61,13 @@ router.patch('/:id', (req: Request, res: Response) => {
 });
 
 /* ─── Delete claim ─── */
-router.delete('/:id', (req: Request, res: Response) => {
+router.delete('/:id', requireRootAdmin, (req: Request, res: Response) => {
   db.prepare('DELETE FROM proposal_claims_library WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
 
 /* ─── Seed default claims (idempotent — only inserts if missing) ─── */
-router.post('/seed', (_req: Request, res: Response) => {
+router.post('/seed', requireRootAdmin, (_req: Request, res: Response) => {
   const defaultClaims = [
     { id: 'CLM-001', category: 'GIFT Description', claim: '$GIFT is a gold-backed digital token designed to represent ownership of physical gold stored in institutional-grade vaults.', evidence_url: null, jurisdiction: 'Global', version: '1.0', effective_date: '2026-01-01', review_date: '2026-12-31', owner: 'Marketing' },
     { id: 'CLM-002', category: 'Gold Backing', claim: 'Each $GIFT token is fully backed by physical gold, with a target of 1 gram of 99.99% fine gold per token.', evidence_url: null, jurisdiction: 'Global', version: '1.0', effective_date: '2026-01-01', review_date: '2026-12-31', owner: 'Product' },

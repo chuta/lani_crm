@@ -6,8 +6,26 @@
  * - Outputs clean HTML suitable for print-to-PDF
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import db from '../db.js';
 import { runReleaseGate } from '../routes/release.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+function laniLogoSrc(): string {
+  const candidates = [
+    path.join(__dirname, '..', '..', '..', 'lani_logo.png'),
+    path.join(__dirname, '..', '..', '..', 'web', 'public', 'lani_logo.png'),
+  ];
+  for (const file of candidates) {
+    if (fs.existsSync(file)) {
+      return `data:image/png;base64,${fs.readFileSync(file).toString('base64')}`;
+    }
+  }
+  return '';
+}
 
 export interface GeneratedDocument {
   html: string;
@@ -94,17 +112,7 @@ export function generateProposalDocument(proposalId: string): GeneratedDocument 
   sections.push(`
     <div class="doc-header">
       <div class="logo-mark">
-        <svg viewBox="0 0 100 100" width="44" height="44" fill="none">
-          <path d="M50 38 C44 20, 30 8, 10 18 C-2 26, 8 44, 30 46 C36 46.5, 44 45, 50 42" stroke="#895CFE" stroke-width="2.5" stroke-linecap="round"/>
-          <path d="M50 38 C56 20, 70 8, 90 18 C102 26, 92 44, 70 46 C64 46.5, 56 45, 50 42" stroke="#895CFE" stroke-width="2.5" stroke-linecap="round"/>
-          <path d="M50 42 C44 46, 32 50, 18 58 C6 66, 10 80, 22 84 C34 88, 44 74, 48 62" stroke="#895CFE" stroke-width="2.5" stroke-linecap="round"/>
-          <path d="M50 42 C56 46, 68 50, 82 58 C94 66, 90 80, 78 84 C66 88, 56 74, 52 62" stroke="#895CFE" stroke-width="2.5" stroke-linecap="round"/>
-          <line x1="50" y1="38" x2="50" y2="60" stroke="#895CFE" stroke-width="2.5" stroke-linecap="round"/>
-          <path d="M50 38 C48 30, 42 22, 38 16" stroke="#895CFE" stroke-width="2" stroke-linecap="round"/>
-          <path d="M50 38 C52 30, 58 22, 62 16" stroke="#895CFE" stroke-width="2" stroke-linecap="round"/>
-          <circle cx="38" cy="16" r="2.5" fill="#895CFE"/>
-          <circle cx="62" cy="16" r="2.5" fill="#895CFE"/>
-        </svg>
+        <img src="${laniLogoSrc()}" alt="Lani Consulting" height="44" style="height:44px;width:auto;" />
       </div>
       <div>
         <div class="doc-title">COMMERCIAL PROPOSAL</div>
@@ -389,7 +397,7 @@ export function generateProposalDocument(proposalId: string): GeneratedDocument 
   @page { size: A4; margin: 22mm 20mm; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: 'Segoe UI', Inter, -apple-system, sans-serif; color: #1a1a2e; line-height: 1.55; font-size: 11pt; }
-  .doc-header { display: flex; gap: 14px; align-items: center; border-bottom: 3px solid #895CFE; padding-bottom: 16px; margin-bottom: 22px; }
+  .doc-header { display: flex; gap: 14px; align-items: center; border-bottom: 3px solid #00843D; padding-bottom: 16px; margin-bottom: 22px; }
   .logo-mark { flex-shrink: 0; }
   .doc-title { font-size: 19pt; font-weight: 700; letter-spacing: 0.04em; color: #895CFE; }
   .doc-partner { font-size: 13pt; font-weight: 600; color: #1a1a2e; margin-top: 2px; }

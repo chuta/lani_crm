@@ -13,20 +13,73 @@ const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
+function tableSql(name: string): string {
+  const row = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name=?`).get(name) as { sql?: string } | undefined;
+  return row?.sql || '';
+}
+
+/** Wipe the $GIFT integration book so local SQLite starts as a clean LANI commercial file. */
+function resetGiftBookIfNeeded(): void {
+  const dealsSql = tableSql('deals');
+  const librarySql = tableSql('archetype_library');
+  if (!dealsSql && !librarySql) return;
+
+  const giftDeals = dealsSql.includes("'I','II'") || dealsSql.includes("'I', 'II'");
+  const giftLibrary = librarySql.includes('effort_tier') || librarySql.includes('precedent_template');
+  const missingLaniCols = dealsSql && (!dealsSql.includes('geography') || !dealsSql.includes('partnership_role'));
+  const giftRows = librarySql
+    ? db.prepare(`SELECT 1 FROM archetype_library WHERE id IN ('I','II','III') LIMIT 1`).get()
+    : null;
+
+  if (!giftDeals && !giftLibrary && !missingLaniCols && !giftRows) return;
+
+  console.log('[db] Wiping $GIFT SQLite book and recreating a clean LANI commercial file');
+  db.exec(`
+    PRAGMA foreign_keys = OFF;
+    DROP TABLE IF EXISTS proposal_audit_events;
+    DROP TABLE IF EXISTS proposal_preflight;
+    DROP TABLE IF EXISTS proposal_growth_tiers;
+    DROP TABLE IF EXISTS proposal_extended_fees;
+    DROP TABLE IF EXISTS proposal_conditional_modules;
+    DROP TABLE IF EXISTS proposal_discussion_points;
+    DROP TABLE IF EXISTS proposal_success_metrics;
+    DROP TABLE IF EXISTS proposal_terms;
+    DROP TABLE IF EXISTS proposal_responsibilities;
+    DROP TABLE IF EXISTS proposal_risks;
+    DROP TABLE IF EXISTS proposal_approvals;
+    DROP TABLE IF EXISTS proposal_claims;
+    DROP TABLE IF EXISTS proposal_assumptions;
+    DROP TABLE IF EXISTS proposal_economics;
+    DROP TABLE IF EXISTS proposal_versions;
+    DROP TABLE IF EXISTS proposal_projects;
+    DROP TABLE IF EXISTS proposal_claims_library;
+    DROP TABLE IF EXISTS bd_prospecting_targets;
+    DROP TABLE IF EXISTS stage_transitions;
+    DROP TABLE IF EXISTS deals;
+    DROP TABLE IF EXISTS archetype_library;
+    PRAGMA foreign_keys = ON;
+  `);
+}
+
 export function initializeDatabase(): void {
+  resetGiftBookIfNeeded();
   db.exec(`
     CREATE TABLE IF NOT EXISTS deals (
       id TEXT PRIMARY KEY,
       partner_name TEXT NOT NULL,
       sector TEXT,
+      partnership_role TEXT NOT NULL DEFAULT 'end_client'
+        CHECK(partnership_role IN ('end_client','channel','delivery','institutional','ecosystem')),
+      geography TEXT NOT NULL DEFAULT 'NG'
+        CHECK(geography IN ('NG','ECOWAS','GLOBAL')),
       deal_stage TEXT,
       description TEXT,
-      archetype TEXT NOT NULL CHECK(archetype IN ('I','II','III','IV','V','VI','VII')),
+      archetype TEXT NOT NULL CHECK(archetype IN ('A','B','C','D','E','F')),
       is_repeat INTEGER NOT NULL DEFAULT 0,
       novelty_level INTEGER NOT NULL DEFAULT 1,
       revenue_potential INTEGER NOT NULL CHECK(revenue_potential BETWEEN 1 AND 3),
       strategic_fit INTEGER NOT NULL CHECK(strategic_fit BETWEEN 1 AND 3),
-      effort_tier REAL NOT NULL,
+      effort_tier REAL NOT NULL DEFAULT 1,
       novelty_penalty INTEGER NOT NULL DEFAULT 1,
       priority_score REAL,
       queue_position INTEGER,
@@ -36,7 +89,7 @@ export function initializeDatabase(): void {
       tech_owner TEXT,
       urgency TEXT,
       compliance_flags TEXT,
-      triage_classification_corrected TEXT CHECK(triage_classification_corrected IN ('I','II','III','IV','V','VI','VII')),
+      triage_classification_corrected TEXT,
       triage_novelty_flag TEXT,
       triage_response_at TEXT,
       triage_responded_by TEXT,
@@ -59,11 +112,12 @@ export function initializeDatabase(): void {
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       one_line_test TEXT NOT NULL,
-      effort_tier REAL NOT NULL,
+      typical_organisations TEXT NOT NULL DEFAULT '[]',
+      problems TEXT NOT NULL DEFAULT '[]',
+      lani_opportunity TEXT NOT NULL DEFAULT '[]',
+      entry_point TEXT,
+      commercial_trigger TEXT,
       description TEXT,
-      standard_components TEXT,
-      precedent_name TEXT,
-      precedent_template TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -72,7 +126,237 @@ export function initializeDatabase(): void {
     CREATE INDEX IF NOT EXISTS idx_deals_archetype ON deals(archetype);
     CREATE INDEX IF NOT EXISTS idx_deals_stage ON deals(current_stage);
     CREATE INDEX IF NOT EXISTS idx_deals_archived ON deals(is_archived);
+    CREATE INDEX IF NOT EXISTS idx_deals_geography ON deals(geography);
     CREATE INDEX IF NOT EXISTS idx_transitions_deal ON stage_transitions(deal_id);
+  `);
+  ensureAccountsSchema();
+}
+
+function columnExists(table: string, column: string): boolean {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  return cols.some((c) => c.name === column);
+}
+
+export function ensureAccountsSchema(): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS accounts (
+      id TEXT PRIMARY KEY,
+      organisation TEXT NOT NULL,
+      archetype TEXT NOT NULL CHECK(archetype IN ('A','B','C','D','E','F')),
+      sector TEXT,
+      partnership_role TEXT NOT NULL DEFAULT 'end_client'
+        CHECK(partnership_role IN ('end_client','channel','delivery','institutional','ecosystem')),
+      geography TEXT NOT NULL DEFAULT 'NG'
+        CHECK(geography IN ('NG','ECOWAS','GLOBAL')),
+      lane TEXT NOT NULL DEFAULT 'immediate'
+        CHECK(lane IN ('immediate','strategic','channel','emerging')),
+      current_stage INTEGER NOT NULL DEFAULT 1 CHECK(current_stage BETWEEN 1 AND 8),
+      decision_maker TEXT,
+      contact_email TEXT,
+      relationship_owner TEXT,
+      strategic_problem TEXT,
+      trigger_event TEXT,
+      lani_capability TEXT,
+      potential_partners TEXT,
+      estimated_value REAL,
+      probability INTEGER CHECK(probability IS NULL OR (probability BETWEEN 0 AND 100)),
+      expected_decision_date TEXT,
+      revenue_originated REAL NOT NULL DEFAULT 0,
+      revenue_influenced REAL NOT NULL DEFAULT 0,
+      next_action TEXT,
+      notes TEXT,
+      consortium_required INTEGER NOT NULL DEFAULT 0,
+      score_strategic_fit INTEGER NOT NULL DEFAULT 3 CHECK(score_strategic_fit BETWEEN 1 AND 5),
+      score_access INTEGER NOT NULL DEFAULT 3 CHECK(score_access BETWEEN 1 AND 5),
+      score_commercial INTEGER NOT NULL DEFAULT 3 CHECK(score_commercial BETWEEN 1 AND 5),
+      score_urgency INTEGER NOT NULL DEFAULT 3 CHECK(score_urgency BETWEEN 1 AND 5),
+      score_conversion INTEGER NOT NULL DEFAULT 3 CHECK(score_conversion BETWEEN 1 AND 5),
+      internal_priority REAL,
+      is_archived INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_accounts_lane ON accounts(lane);
+    CREATE INDEX IF NOT EXISTS idx_accounts_archetype ON accounts(archetype);
+    CREATE INDEX IF NOT EXISTS idx_accounts_archived ON accounts(is_archived);
+    CREATE INDEX IF NOT EXISTS idx_accounts_priority ON accounts(internal_priority);
+  `);
+
+  if (tableSql('deals') && !columnExists('deals', 'account_id')) {
+    db.exec('ALTER TABLE deals ADD COLUMN account_id TEXT');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_deals_account ON deals(account_id)');
+  }
+
+  if (tableSql('deals') && !columnExists('deals', 'lane')) {
+    db.exec(`ALTER TABLE deals ADD COLUMN lane TEXT NOT NULL DEFAULT 'immediate'`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_deals_lane ON deals(lane)');
+    db.exec(`
+      UPDATE deals SET lane = (
+        SELECT accounts.lane FROM accounts WHERE accounts.id = deals.account_id
+      )
+      WHERE account_id IS NOT NULL
+        AND EXISTS (SELECT 1 FROM accounts WHERE accounts.id = deals.account_id)
+    `);
+  }
+
+  remapLegacyDealStages();
+  ensureEcosystemSchema();
+  ensureAccountBriefsSchema();
+  ensureFeeBandsSchema();
+  ensureCoachStallsSchema();
+  ensureCommercialCasesSchema();
+  ensureConversionAdviceSchema();
+}
+
+function addColumn(table: string, column: string, def: string): void {
+  if (!tableSql(table) || columnExists(table, column)) return;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${def}`);
+}
+
+function ensureEcosystemSchema(): void {
+  const needModelBackfill = Boolean(tableSql('accounts') && !columnExists('accounts', 'commercial_model'));
+  addColumn('accounts', 'commercial_model', "TEXT NOT NULL DEFAULT 'direct'");
+  addColumn('accounts', 'delivery_partner_account_id', 'TEXT');
+  addColumn('deals', 'delivery_partner_account_id', 'TEXT');
+  addColumn('deals', 'next_action', 'TEXT');
+  addColumn('deals', 'expected_decision_date', 'TEXT');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_accounts_role ON accounts(partnership_role)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_accounts_delivery_partner ON accounts(delivery_partner_account_id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_deals_delivery_partner ON deals(delivery_partner_account_id)');
+
+  if (needModelBackfill) {
+    db.exec(`
+      UPDATE accounts SET commercial_model = CASE partnership_role
+        WHEN 'channel' THEN 'referral'
+        WHEN 'delivery' THEN 'consortium'
+        WHEN 'institutional' THEN 'mou'
+        WHEN 'ecosystem' THEN 'joint_market'
+        ELSE 'direct'
+      END
+    `);
+  }
+}
+
+function ensureFeeBandsSchema(): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS fee_bands (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      horizon TEXT NOT NULL,
+      typical_work TEXT NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'NGN',
+      min_m REAL NOT NULL,
+      max_m REAL NOT NULL,
+      when_to_use TEXT NOT NULL,
+      archived INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_by TEXT
+    );
+  `);
+}
+
+function ensureCoachStallsSchema(): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS coach_stalls (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      when_to_use TEXT NOT NULL,
+      owner_move TEXT NOT NULL,
+      archived INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_by TEXT
+    );
+  `);
+}
+
+function ensureCommercialCasesSchema(): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS commercial_cases (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      status TEXT NOT NULL DEFAULT 'draft'
+        CHECK(status IN ('draft','applied','discarded')),
+      payload TEXT NOT NULL DEFAULT '{}',
+      model TEXT,
+      provider TEXT,
+      source_url TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      applied_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_commercial_cases_account ON commercial_cases(account_id);
+    CREATE INDEX IF NOT EXISTS idx_commercial_cases_status ON commercial_cases(status);
+    CREATE INDEX IF NOT EXISTS idx_commercial_cases_created ON commercial_cases(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_commercial_cases_account_created ON commercial_cases(account_id, created_at DESC);
+  `);
+  addColumn('commercial_cases', 'accepted_sections', "TEXT NOT NULL DEFAULT '[]'");
+}
+
+function ensureConversionAdviceSchema(): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS conversion_advice (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      status TEXT NOT NULL DEFAULT 'draft'
+        CHECK(status IN ('draft','applied','discarded')),
+      payload TEXT NOT NULL DEFAULT '{}',
+      model TEXT,
+      provider TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      applied_at TEXT,
+      accepted_fields TEXT NOT NULL DEFAULT '[]'
+    );
+    CREATE INDEX IF NOT EXISTS idx_conversion_advice_account ON conversion_advice(account_id);
+    CREATE INDEX IF NOT EXISTS idx_conversion_advice_status ON conversion_advice(status);
+    CREATE INDEX IF NOT EXISTS idx_conversion_advice_created ON conversion_advice(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_conversion_advice_account_created ON conversion_advice(account_id, created_at DESC);
+  `);
+}
+
+function ensureAccountBriefsSchema(): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS account_briefs (
+      id TEXT PRIMARY KEY,
+      account_id TEXT REFERENCES accounts(id) ON DELETE SET NULL,
+      organisation TEXT,
+      status TEXT NOT NULL DEFAULT 'draft'
+        CHECK(status IN ('draft','applied','discarded')),
+      payload TEXT NOT NULL DEFAULT '{}',
+      model TEXT,
+      provider TEXT,
+      source_url TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      applied_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_account_briefs_account ON account_briefs(account_id);
+    CREATE INDEX IF NOT EXISTS idx_account_briefs_status ON account_briefs(status);
+    CREATE INDEX IF NOT EXISTS idx_account_briefs_created ON account_briefs(created_at DESC);
+  `);
+}
+
+/** One-time map of the old 9-stage GIFT path onto the 8-stage consulting conversion path. */
+function remapLegacyDealStages(): void {
+  if (!tableSql('deals')) return;
+  const max = db.prepare('SELECT MAX(current_stage) as m FROM deals').get() as { m: number | null };
+  if (!max?.m || max.m <= 8) return;
+  console.log('[db] Remapping legacy 9-stage deals onto the consulting conversion path');
+  db.exec(`
+    UPDATE deals SET current_stage = CASE current_stage
+      WHEN 3 THEN 2
+      WHEN 4 THEN 3
+      WHEN 5 THEN 4
+      WHEN 6 THEN 4
+      WHEN 7 THEN 5
+      WHEN 8 THEN 6
+      WHEN 9 THEN 6
+      ELSE current_stage
+    END
+    WHERE current_stage >= 3;
   `);
 }
 

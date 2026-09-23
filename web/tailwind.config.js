@@ -21,6 +21,10 @@ export default {
           success: '#3ED98B',
           danger: '#ef4444',
         },
+        lani: {
+          green: '#00843D',
+          dark: '#006631',
+        },
       },
       fontFamily: {
         display: ['Outfit', 'system-ui', 'sans-serif'],

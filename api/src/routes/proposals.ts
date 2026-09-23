@@ -193,7 +193,7 @@ router.post('/promote-bd', (req: Request, res: Response) => {
   const slug = firm_name.replace(/[^A-Za-z0-9]/g, '_').toLowerCase().slice(0, 40);
   const dealId = `bd_${slug}_${Date.now()}`;
 
-  db.prepare(`INSERT INTO deals (id, partner_name, current_stage, archetype, is_repeat, novelty_level, revenue_potential, strategic_fit, effort_tier, novelty_penalty) VALUES (?,?,5,'II',0,2,2,2,1,1)`).run(
+  db.prepare(`INSERT INTO deals (id, partner_name, current_stage, archetype, is_repeat, novelty_level, revenue_potential, strategic_fit, effort_tier, novelty_penalty) VALUES (?,?,5,'B',0,1,2,2,1,1)`).run(
     dealId, firm_name
   );
 
