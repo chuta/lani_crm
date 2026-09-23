@@ -1,0 +1,48 @@
+# Vue app is served at /partnerships/ (Vite base). The build still emits
+# index.html, assets/*, and public files at the publish root, so Netlify
+# must rewrite the prefix onto those files and fall back to the SPA shell.
+
+[build]
+  base = "web"
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# Hashed bundles and files from web/public.
+[[redirects]]
+  from = "/partnerships/assets/*"
+  to = "/assets/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/partnerships/lani_logo.png"
+  to = "/lani_logo.png"
+  status = 200
+
+[[redirects]]
+  from = "/partnerships/favicon.svg"
+  to = "/favicon.svg"
+  status = 200
+
+[[redirects]]
+  from = "/partnerships/PARTNERSHIP-OS-USER-GUIDE-v1.0.docx"
+  to = "/PARTNERSHIP-OS-USER-GUIDE-v1.0.docx"
+  status = 200
+
+# Client routes: /partnerships/, /partnerships/accounts, /partnerships/deals/:id
+[[redirects]]
+  from = "/partnerships/*"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/partnerships"
+  to = "/partnerships/"
+  status = 301
+
+[[redirects]]
+  from = "/"
+  to = "/partnerships/"
+  status = 301
