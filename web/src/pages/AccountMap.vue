@@ -6,6 +6,7 @@ import AccountCasePanel from '../components/AccountCasePanel.vue'
 import AccountCoachPanel from '../components/AccountCoachPanel.vue'
 import {
   api,
+  APPLYABLE_BRIEF_FIELDS,
   CONVERSION_GAP_LABELS,
   type Account,
   type AccountBrief,
@@ -70,6 +71,7 @@ const addForm = ref(emptyForm())
 const addSourceUrl = ref('')
 const addNotes = ref('')
 const addBrief = ref<AccountBrief | null>(null)
+const reviewAddBrief = ref(false)
 const addResearching = ref(false)
 const addCreatingFromBrief = ref(false)
 
@@ -85,6 +87,7 @@ const detailNotes = ref('')
 const detailBrief = ref<AccountBrief | null>(null)
 const detailResearching = ref(false)
 const detailApplying = ref(false)
+const reviewBrief = ref(false)
 const detailCase = ref<CommercialCase | null>(null)
 const caseSourceUrl = ref('')
 const caseNotes = ref('')
@@ -337,6 +340,7 @@ function openAdd() {
   addSourceUrl.value = ''
   addNotes.value = ''
   addBrief.value = null
+  reviewAddBrief.value = false
   showAddModal.value = true
 }
 
@@ -368,6 +372,62 @@ async function researchAdd() {
   }
 }
 
+async function qualifyCreatedAccount(account: Account, brief: AccountBrief | null) {
+  if (Number(account.current_stage) >= 2) return account
+  const nextAction = String(account.next_action || brief?.payload.next_action || '').trim()
+    || 'Confirm the trigger and the decision-maker.'
+  const saved = await api.updateAccount(account.id, {
+    current_stage: 2,
+    next_action: nextAction,
+  })
+  return saved.account
+}
+
+async function applyAddBrief() {
+  if (!addForm.value.organisation.trim()) {
+    addError.value = 'Enter an organisation name before applying a brief.'
+    return
+  }
+  if (!aiStatus.value.configured) {
+    addError.value = 'Research is not configured on the API.'
+    return
+  }
+  addError.value = ''
+  addCreatingFromBrief.value = true
+  try {
+    if (!addBrief.value || addBrief.value.status === 'discarded') {
+      addResearching.value = true
+      const researched = await api.researchBrief({
+        organisation: addForm.value.organisation.trim(),
+        source_url: addSourceUrl.value.trim() || undefined,
+        notes: addNotes.value.trim() || undefined,
+        geography: addForm.value.geography,
+        partnership_role: addForm.value.partnership_role,
+        sector: addForm.value.sector || undefined,
+      })
+      addBrief.value = researched.brief
+      addResearching.value = false
+    }
+    const created = await api.createAccountFromBrief(addBrief.value.id, {
+      accepted_fields: briefFieldsToApply(addBrief.value),
+      organisation: addForm.value.organisation.trim() || addBrief.value.organisation || undefined,
+      relationship_owner: addForm.value.relationship_owner.trim() || undefined,
+    })
+    const account = await qualifyCreatedAccount(created.account, addBrief.value)
+    showAddModal.value = false
+    addBrief.value = null
+    await loadData()
+    await loadCatalog()
+    await openDetailById(account.id)
+  } catch (e: any) {
+    addError.value = e.message || 'Could not apply the brief.'
+    reviewAddBrief.value = true
+  } finally {
+    addResearching.value = false
+    addCreatingFromBrief.value = false
+  }
+}
+
 async function createFromAddBrief(fields: ApplyableBriefField[]) {
   if (!addBrief.value) return
   addError.value = ''
@@ -378,11 +438,12 @@ async function createFromAddBrief(fields: ApplyableBriefField[]) {
       organisation: addForm.value.organisation.trim() || addBrief.value.organisation || undefined,
       relationship_owner: addForm.value.relationship_owner.trim() || undefined,
     })
+    const account = await qualifyCreatedAccount(res.account, addBrief.value)
     showAddModal.value = false
     addBrief.value = null
     await loadData()
     await loadCatalog()
-    await openDetailById(res.account.id)
+    await openDetailById(account.id)
   } catch (e: any) {
     addError.value = e.message || 'Could not create account from the brief.'
   } finally {
@@ -445,6 +506,12 @@ async function loadLatestCoach(accountId: string) {
 }
 
 const caseUnlocked = computed(() => Number(selected.value?.current_stage) >= 2)
+const briefIsApplied = computed(() => detailBrief.value?.status === 'applied')
+const briefBusy = computed(() => detailApplying.value || detailResearching.value)
+const unblockLabel = computed(() => {
+  if (briefBusy.value) return briefIsApplied.value ? 'Moving…' : 'Applying brief…'
+  return briefIsApplied.value ? 'Move to Qualified' : 'Apply a Brief'
+})
 const coachUnlocked = computed(() => {
   const stage = Number(selected.value?.current_stage)
   return stage >= 1 && stage <= 5
@@ -601,6 +668,65 @@ async function applyDetailCase(payload: { accepted_sections: CaseSectionId[]; ac
     caseError.value = e.message || 'Could not apply accepted sections.'
   } finally {
     caseApplying.value = false
+  }
+}
+
+function briefFieldsToApply(brief: AccountBrief): ApplyableBriefField[] {
+  const payload = brief.payload
+  return APPLYABLE_BRIEF_FIELDS.filter((field) => {
+    if (field === 'consortium_required') return true
+    if (field.startsWith('score_')) {
+      const key = field.slice('score_'.length) as keyof typeof payload.scores
+      const value = payload.scores?.[key]
+      return value !== undefined && value !== null
+    }
+    const value = (payload as Record<string, unknown>)[field]
+    return value !== undefined && value !== null && value !== ''
+  })
+}
+
+async function applyBriefAndUnblock() {
+  if (!selected.value) return
+  detailError.value = ''
+  if (!briefIsApplied.value && !aiStatus.value.configured) {
+    detailError.value = 'Research is not configured on the API.'
+    return
+  }
+  detailApplying.value = true
+  try {
+    if (!briefIsApplied.value) {
+      let brief = detailBrief.value
+      if (!brief || brief.status === 'discarded') {
+        detailResearching.value = true
+        const researched = await api.researchAccountBrief(selected.value.id, {
+          source_url: detailSourceUrl.value.trim() || undefined,
+          notes: detailNotes.value.trim() || undefined,
+        })
+        brief = researched.brief
+        detailBrief.value = brief
+        detailResearching.value = false
+      }
+      const fields = briefFieldsToApply(brief)
+      const applied = await api.applyBrief(selected.value.id, brief.id, fields)
+      selected.value = applied.account
+      detailBrief.value = applied.brief
+    }
+    if (Number(selected.value.current_stage) < 2) {
+      const nextAction = String(selected.value.next_action || detailBrief.value?.payload.next_action || '').trim()
+        || 'Confirm the trigger and the decision-maker.'
+      const saved = await api.updateAccount(selected.value.id, {
+        current_stage: 2,
+        next_action: nextAction,
+      })
+      selected.value = saved.account
+    }
+    editing.value = false
+    await loadData()
+  } catch (e: any) {
+    detailError.value = e.message || 'Could not apply the brief.'
+  } finally {
+    detailResearching.value = false
+    detailApplying.value = false
   }
 }
 
@@ -828,42 +954,51 @@ const PIPELINE_STAGES = ['Intelligence', 'Qualified', 'In conversation', 'Propos
             <div class="md:col-span-2 rounded-lg border border-deep-600 bg-deep-900/40 p-4 space-y-3">
               <div class="flex items-center justify-between gap-3">
                 <div>
-                  <h4 class="font-medium text-white">Research</h4>
-                  <p class="text-xs text-gray-500">Draft a brief, then tick fields to create at Intelligence. The form below stays for a manual add.</p>
+                  <h4 class="font-medium text-white">Apply a Brief</h4>
+                  <p class="text-xs text-gray-500">Creates the account at Qualified. The form below is only for a manual add.</p>
                 </div>
                 <button
                   type="button"
                   class="btn-primary text-sm"
-                  :disabled="addResearching || !addForm.organisation.trim() || !aiStatus.configured"
-                  @click="researchAdd"
+                  :disabled="addCreatingFromBrief || addResearching || !addForm.organisation.trim() || !aiStatus.configured"
+                  @click="applyAddBrief"
                 >
-                  {{ addResearching ? 'Researching…' : 'Research' }}
+                  {{ addCreatingFromBrief || addResearching ? 'Applying brief…' : 'Apply a Brief' }}
                 </button>
               </div>
               <p v-if="!aiStatus.configured" class="text-xs text-accent-gold">Research is not configured on the API.</p>
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <label class="label">Public page (optional)</label>
-                  <input v-model="addSourceUrl" type="url" class="input-field" placeholder="https://" />
-                </div>
-                <div>
-                  <label class="label">Owner notes (optional)</label>
-                  <input v-model="addNotes" class="input-field" placeholder="What you already know" />
-                </div>
-              </div>
-              <AccountBriefPanel
+              <button
                 v-if="addBrief"
-                mode="create"
-                :brief="addBrief"
-                :busy="addCreatingFromBrief"
-                :archetypes="archetypes"
-                :sectors="sectors"
-                :roles="roles"
-                :geographies="geographies"
-                :lanes="lanes"
-                :models="models"
-                @apply="createFromAddBrief"
-              />
+                type="button"
+                class="text-xs text-primary-400 hover:underline"
+                @click="reviewAddBrief = !reviewAddBrief"
+              >
+                {{ reviewAddBrief ? 'Hide field review' : 'Review fields first' }}
+              </button>
+              <template v-if="reviewAddBrief && addBrief">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label class="label">Public page (optional)</label>
+                    <input v-model="addSourceUrl" type="url" class="input-field" placeholder="https://" />
+                  </div>
+                  <div>
+                    <label class="label">Owner notes (optional)</label>
+                    <input v-model="addNotes" class="input-field" placeholder="What you already know" />
+                  </div>
+                </div>
+                <AccountBriefPanel
+                  mode="create"
+                  :brief="addBrief"
+                  :busy="addCreatingFromBrief"
+                  :archetypes="archetypes"
+                  :sectors="sectors"
+                  :roles="roles"
+                  :geographies="geographies"
+                  :lanes="lanes"
+                  :models="models"
+                  @apply="createFromAddBrief"
+                />
+              </template>
             </div>
             <div>
               <label class="label">Client archetype *</label>
@@ -1026,52 +1161,60 @@ const PIPELINE_STAGES = ['Intelligence', 'Qualified', 'In conversation', 'Propos
 
         <div v-if="!editing" class="space-y-5 text-sm">
           <div class="rounded-lg border border-deep-600 bg-deep-900/40 p-4 space-y-3">
-            <div class="flex items-center justify-between gap-3">
-              <div>
-                <h4 class="font-medium text-white">Research</h4>
-                <p class="text-xs text-gray-500">Review the draft, then tick fields to write back. Nothing auto-saves.</p>
+            <div>
+              <h4 class="font-medium text-white">Intelligence brief</h4>
+                <p class="text-xs text-gray-500">Optional. Open field review only if you want to change what gets written.</p>
+            </div>
+            <p v-if="!aiStatus.configured && !briefIsApplied" class="text-xs text-accent-gold">Research is not configured on the API.</p>
+            <button
+              v-if="detailBrief"
+              type="button"
+              class="text-xs text-primary-400 hover:underline"
+              @click="reviewBrief = !reviewBrief"
+            >
+              {{ reviewBrief ? 'Hide field review' : 'Review fields first' }}
+            </button>
+            <template v-if="reviewBrief">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label class="label">Public page (optional)</label>
+                  <input v-model="detailSourceUrl" type="url" class="input-field" placeholder="https://" />
+                </div>
+                <div>
+                  <label class="label">Owner notes (optional)</label>
+                  <input v-model="detailNotes" class="input-field" placeholder="What you already know" />
+                </div>
               </div>
               <button
                 type="button"
-                class="btn-primary text-sm"
+                class="btn-secondary text-xs"
                 :disabled="detailResearching || !aiStatus.configured"
                 @click="researchDetail"
               >
-                {{ detailResearching ? 'Researching…' : 'Research' }}
+                {{ detailResearching ? 'Researching…' : 'Research again' }}
               </button>
-            </div>
-            <p v-if="!aiStatus.configured" class="text-xs text-accent-gold">Research is not configured on the API.</p>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <label class="label">Public page (optional)</label>
-                <input v-model="detailSourceUrl" type="url" class="input-field" placeholder="https://" />
-              </div>
-              <div>
-                <label class="label">Owner notes (optional)</label>
-                <input v-model="detailNotes" class="input-field" placeholder="What you already know" />
-              </div>
-            </div>
-            <AccountBriefPanel
-              v-if="detailBrief"
-              mode="apply"
-              :brief="detailBrief"
-              :current="selected"
-              :busy="detailApplying"
-              :archetypes="archetypes"
-              :sectors="sectors"
-              :roles="roles"
-              :geographies="geographies"
-              :lanes="lanes"
-              :models="models"
-              @apply="applyDetailBrief"
-            />
+              <AccountBriefPanel
+                v-if="detailBrief"
+                mode="apply"
+                :brief="detailBrief"
+                :current="selected"
+                :busy="detailApplying"
+                :archetypes="archetypes"
+                :sectors="sectors"
+                :roles="roles"
+                :geographies="geographies"
+                :lanes="lanes"
+                :models="models"
+                @apply="applyDetailBrief"
+              />
+            </template>
           </div>
 
           <div v-if="coachUnlocked" class="rounded-lg border border-deep-600 bg-deep-900/40 p-4 space-y-3">
             <div class="flex items-center justify-between gap-3">
               <div>
                 <h4 class="font-medium text-white">Conversion Coach</h4>
-                <p class="text-xs text-gray-500">Stall, why, and next action on stages 1–5. Tick to accept. Stage and value never write back.</p>
+                <p class="text-xs text-gray-500">Stall, why, and next action on stages 1–5. Optional.</p>
               </div>
               <button
                 type="button"
@@ -1108,7 +1251,7 @@ const PIPELINE_STAGES = ['Intelligence', 'Qualified', 'In conversation', 'Propos
             <div class="flex items-center justify-between gap-3">
               <div>
                 <h4 class="font-medium text-white">Commercial Case</h4>
-                <p class="text-xs text-gray-500">Pursuit memo after Qualified. Accept sections. Stage does not move.</p>
+                <p class="text-xs text-gray-500">Pursuit memo after Qualified. Generate it in one step.</p>
               </div>
               <button
                 v-if="caseUnlocked"
@@ -1120,8 +1263,20 @@ const PIPELINE_STAGES = ['Intelligence', 'Qualified', 'In conversation', 'Propos
                 {{ caseGenerating ? 'Generating…' : 'Generate Case' }}
               </button>
             </div>
-            <div v-if="!caseUnlocked" class="rounded-lg border border-accent-gold/30 bg-accent-gold/10 p-3 text-sm text-accent-gold">
-              Blocked at Intelligence. Apply a Brief, then move this account to Qualified to generate a pursuit memo.
+            <div v-if="!caseUnlocked" class="rounded-lg border border-accent-gold/30 bg-accent-gold/10 p-3 space-y-3">
+              <p class="text-sm text-accent-gold">
+                {{ briefIsApplied
+                  ? 'The brief is already on this account. Move it to Qualified to open the pursuit memo.'
+                  : 'Apply a Brief to write the research onto this account and open the pursuit memo.' }}
+              </p>
+              <button
+                type="button"
+                class="btn-primary text-sm"
+                :disabled="briefBusy || (!aiStatus.configured && !briefIsApplied)"
+                @click="applyBriefAndUnblock"
+              >
+                {{ unblockLabel }}
+              </button>
             </div>
             <template v-else>
               <p v-if="!aiStatus.configured" class="text-xs text-accent-gold">Research is not configured on the API.</p>

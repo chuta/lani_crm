@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   api,
@@ -38,6 +38,8 @@ const stageNote = ref('')
 const stageNextAction = ref('')
 const stageDecisionDate = ref('')
 const stagePartnerId = ref('')
+const advancing = ref(false)
+const stageOther = ref(false)
 
 const showBlockerModal = ref(false)
 const blockerText = ref('')
@@ -91,8 +93,34 @@ function laneLabel(id?: string | null) {
   return lanes.value.find((l) => l.id === id)?.name || id || '—'
 }
 
+const nextStage = computed(() => {
+  const current = Number(deal.value?.current_stage || 0)
+  return stages.value.find((s) => s.id === current + 1) || null
+})
+
+function stageNeedsInput(stageId: number) {
+  if (!deal.value) return false
+  const nextAction = String(stageNextAction.value || deal.value.next_action || deal.value.account_next_action || '').trim()
+  const date = String(stageDecisionDate.value || deal.value.expected_decision_date || '').trim()
+  const partner = String(stagePartnerId.value || deal.value.delivery_partner_account_id || '').trim()
+  if (stageId >= 2 && stageId <= 5 && !nextAction) return true
+  if (stageId >= 4 && stageId <= 6 && !date) return true
+  if (stageId >= 4 && stageId <= 6 && deal.value.consortium_required && !partner) return true
+  return false
+}
+
+function prepareStage(stageId: number) {
+  if (!deal.value) return
+  newStage.value = stageId
+  stageNextAction.value = deal.value.next_action || deal.value.account_next_action || ''
+  stageDecisionDate.value = deal.value.expected_decision_date || ''
+  stagePartnerId.value = deal.value.delivery_partner_account_id || ''
+  stageNote.value = ''
+}
+
 async function moveStage() {
   if (!deal.value || !newStage.value) return
+  advancing.value = true
   try {
     const actor = auth.profile.value?.full_name || auth.profile.value?.email || 'BD'
     const res = await api.advanceStage(deal.value.id, newStage.value, actor, stageNote.value, {
@@ -106,13 +134,24 @@ async function moveStage() {
     newStage.value = 0
     await loadDeal()
   } catch (e: any) { error.value = e.message || 'Failed to move stage' }
+  finally { advancing.value = false }
 }
 
-function openStageModal() {
+async function advanceDeal() {
+  if (!nextStage.value) return
+  prepareStage(nextStage.value.id)
+  stageOther.value = false
+  if (stageNeedsInput(nextStage.value.id)) {
+    showStageModal.value = true
+    return
+  }
+  await moveStage()
+}
+
+function openOtherStage() {
   if (!deal.value) return
-  stageNextAction.value = deal.value.next_action || deal.value.account_next_action || ''
-  stageDecisionDate.value = deal.value.expected_decision_date || ''
-  stagePartnerId.value = deal.value.delivery_partner_account_id || ''
+  stageOther.value = true
+  prepareStage(0)
   showStageModal.value = true
 }
 
@@ -300,7 +339,10 @@ onMounted(loadDeal)
         <h3 class="font-display font-semibold text-white mb-4">Actions</h3>
         <div class="flex flex-wrap gap-3">
           <button @click="openEdit" class="text-sm py-2 px-4 rounded-lg bg-deep-700 text-gray-300 hover:bg-deep-600 transition-colors">Edit</button>
-          <button @click="openStageModal" class="btn-primary text-sm">Move stage</button>
+          <button v-if="nextStage" @click="advanceDeal" class="btn-primary text-sm" :disabled="advancing">
+            {{ advancing ? 'Moving…' : `Advance to ${nextStage.label}` }}
+          </button>
+          <button @click="openOtherStage" class="text-sm py-2 px-4 rounded-lg bg-deep-700 text-gray-300 hover:bg-deep-600 transition-colors">Another stage</button>
           <button @click="showBlockerModal = true" class="btn-secondary text-sm">Add blocker</button>
           <button @click="confirmArchive" class="text-sm py-2 px-4 rounded-lg border border-accent-danger/30 text-accent-danger hover:bg-accent-danger/10 transition-colors">Archive</button>
         </div>
@@ -308,28 +350,29 @@ onMounted(loadDeal)
 
       <div v-if="showStageModal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" @click.self="showStageModal = false">
         <div class="bg-deep-800 border border-deep-600 rounded-xl p-6 w-full max-w-md">
-          <h3 class="font-display font-semibold text-white mb-4">Move conversion stage</h3>
+          <h3 class="font-display font-semibold text-white mb-4">
+            {{ stageOther ? 'Move to another stage' : `Advance to ${stageLabel(newStage)}` }}
+          </h3>
           <div class="space-y-4">
             <div><label class="label">Current stage</label><div class="text-gray-300">{{ stageLabel(deal.current_stage) }}</div></div>
-            <div><label class="label">New stage</label>
+            <div v-if="stageOther"><label class="label">New stage</label>
               <select v-model.number="newStage" class="select-field">
                 <option :value="0">Select stage…</option>
                 <option v-for="s in stages" :key="s.id" :value="s.id" :disabled="s.id === deal.current_stage">{{ s.label }}</option>
               </select>
             </div>
-            <div><label class="label">Next action</label><input v-model="stageNextAction" class="input-field" placeholder="Required from Qualified through Verbal" /></div>
-            <div><label class="label">Expected decision date</label><input v-model="stageDecisionDate" type="date" class="input-field" /></div>
-            <div>
+            <div v-if="newStage >= 2 && newStage <= 5"><label class="label">Next action</label><input v-model="stageNextAction" class="input-field" placeholder="Required from Qualified through Verbal" /></div>
+            <div v-if="newStage >= 4 && newStage <= 6"><label class="label">Expected decision date</label><input v-model="stageDecisionDate" type="date" class="input-field" /></div>
+            <div v-if="newStage >= 4 && newStage <= 6 && deal.consortium_required">
               <label class="label">Named delivery partner</label>
               <select v-model="stagePartnerId" class="select-field">
                 <option value="">Not named yet</option>
                 <option v-for="p in partnerAccounts.filter((a) => a.id !== deal.account_id)" :key="p.id" :value="p.id">{{ p.organisation }}</option>
               </select>
             </div>
-            <div><label class="label">Note</label><input v-model="stageNote" class="input-field" placeholder="What moved?" /></div>
             <div class="flex gap-3 justify-end pt-2">
               <button @click="showStageModal = false" class="btn-secondary text-sm">Cancel</button>
-              <button @click="moveStage" class="btn-primary text-sm" :disabled="!newStage">Move</button>
+              <button @click="moveStage" class="btn-primary text-sm" :disabled="!newStage || advancing">{{ advancing ? 'Moving…' : 'Advance' }}</button>
             </div>
           </div>
         </div>

@@ -27,6 +27,7 @@ const emit = defineEmits<{
 
 const accepted = ref<Set<string>>(new Set())
 const writebacks = ref<Set<string>>(new Set())
+const review = ref(false)
 
 watch(() => props.caseRecord.id, (id) => {
   const prior = props.caseRecord.status === 'applied' ? props.caseRecord.accepted_sections : []
@@ -136,6 +137,11 @@ function submit() {
   })
 }
 
+function keepMemo() {
+  acceptAll()
+  submit()
+}
+
 const applyBlocked = computed(() => accepted.value.size === 0)
 </script>
 
@@ -145,19 +151,35 @@ const applyBlocked = computed(() => accepted.value.size === 0)
       <div>
         <h4 class="font-medium text-white">Pursuit memo</h4>
         <p class="text-xs text-gray-500 mt-0.5">
-          {{ caseRecord.model || 'model' }}
+          {{ draft.headline || caseRecord.model || 'Pursuit memo' }}
           <span v-if="caseRecord.status === 'applied'" class="ml-2 text-accent-teal">Applied</span>
-          · Tick whole sections. Stage and estimated value never write back.
         </p>
       </div>
-      <div class="flex gap-2 shrink-0">
-        <button type="button" class="btn-secondary text-xs" @click="acceptAll">Accept all</button>
-        <button type="button" class="btn-secondary text-xs" :disabled="!accepted.size" @click="clearAccepted">Clear</button>
-      </div>
+      <button
+        v-if="caseRecord.status !== 'applied'"
+        type="button"
+        class="btn-primary text-sm shrink-0"
+        :disabled="busy"
+        @click="keepMemo"
+      >
+        {{ busy ? 'Saving…' : 'Keep this memo' }}
+      </button>
     </div>
+
+    <p v-if="draft.situation" class="text-sm text-gray-300 whitespace-pre-wrap">{{ draft.situation }}</p>
 
     <div v-if="draft.dropped.length" class="text-xs text-gray-500">
       Dropped invented IDs or amounts: {{ draft.dropped.join(' · ') }}
+    </div>
+
+    <button type="button" class="text-xs text-primary-400 hover:underline" @click="review = !review">
+      {{ review ? 'Hide section review' : 'Review sections' }}
+    </button>
+
+    <template v-if="review">
+    <div class="flex gap-2">
+      <button type="button" class="btn-secondary text-xs" @click="acceptAll">Accept all</button>
+      <button type="button" class="btn-secondary text-xs" :disabled="!accepted.size" @click="clearAccepted">Clear</button>
     </div>
 
     <div class="space-y-2">
@@ -216,5 +238,6 @@ const applyBlocked = computed(() => accepted.value.size === 0)
         {{ busy ? 'Applying…' : 'Apply accepted sections' }}
       </button>
     </div>
+    </template>
   </div>
 </template>
