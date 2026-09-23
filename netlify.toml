@@ -9,9 +9,9 @@
 
 [build.environment]
   NODE_VERSION = "20"
-  # Project URL and ref are public identifiers (client config, email templates).
-  # They are not credentials. Service role and API keys stay unmarked and unscanned-omitted.
-  SECRETS_SCAN_OMIT_KEYS = "SUPABASE_URL,SUPABASE_PROJECT_REF,NEXT_PUBLIC_SUPABASE_URL"
+  # Public client identifiers. Vite inlines the VITE_ values into the site bundle.
+  # Service role, database password, and API keys stay scanned.
+  SECRETS_SCAN_OMIT_KEYS = "SUPABASE_URL,SUPABASE_PROJECT_REF,NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,VITE_SUPABASE_URL,VITE_SUPABASE_ANON_KEY"
 
 # Hashed bundles and files from web/public.
 [[redirects]]
