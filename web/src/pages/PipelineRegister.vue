@@ -7,13 +7,10 @@ import {
   type AccountStage,
   type Archetype,
   type CommercialLane,
-  type Deal,
   type ExecutiveData,
 } from '../lib/api'
 
 const router = useRouter()
-const deals = ref<Deal[]>([])
-const laneCounts = ref<Record<string, number>>({})
 const executive = ref<ExecutiveData | null>(null)
 const archetypes = ref<Archetype[]>([])
 const lanes = ref<CommercialLane[]>([])
@@ -27,19 +24,10 @@ const searchQuery = ref('')
 async function loadData() {
   loading.value = true
   try {
-    const params: Record<string, string> = {}
-    if (filterArchetype.value) params.archetype = filterArchetype.value
-    if (filterStage.value) params.stage = filterStage.value
-    if (filterLane.value) params.lane = filterLane.value
-    if (searchQuery.value) params.search = searchQuery.value
-
-    const [dealsRes, execRes, catalog] = await Promise.all([
-      api.listDeals(params),
+    const [execRes, catalog] = await Promise.all([
       api.getExecutive(),
       api.listArchetypes(),
     ])
-    deals.value = dealsRes.deals
-    laneCounts.value = dealsRes.lane_counts || {}
     executive.value = execRes
     archetypes.value = catalog.archetypes
     lanes.value = catalog.lanes || []
@@ -79,13 +67,34 @@ function gapLabel(id: string) {
   return CONVERSION_GAP_LABELS[id] || id
 }
 
+const laneCounts = computed(() => {
+  const counts: Record<string, number> = {}
+  for (const lane of executive.value?.lanes || []) counts[lane.id] = lane.count
+  return counts
+})
+
+const opportunities = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase()
+  return (executive.value?.queue || []).filter((deal: any) => {
+    if (filterArchetype.value && deal.archetype !== filterArchetype.value) return false
+    if (filterStage.value && String(deal.current_stage) !== String(filterStage.value)) return false
+    if (filterLane.value && deal.lane !== filterLane.value) return false
+    if (!q) return true
+    const hay = [deal.partner_name, deal.organisation, deal.trigger_event, deal.strategic_problem, deal.next_action]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+    return hay.includes(q)
+  })
+})
+
 const grouped = computed(() => {
   const activeLanes = filterLane.value
     ? lanes.value.filter((l) => l.id === filterLane.value)
     : lanes.value
   return activeLanes.map((lane) => ({
     lane,
-    deals: deals.value.filter((d) => d.lane === lane.id),
+    deals: opportunities.value.filter((d: any) => d.lane === lane.id),
   })).filter((g) => g.deals.length > 0 || !filterLane.value)
 })
 </script>
@@ -142,20 +151,20 @@ const grouped = computed(() => {
     </div>
 
     <div class="flex flex-wrap gap-3 mb-6">
-      <input v-model="searchQuery" @change="loadData" class="input-field w-64" placeholder="Search organisation, trigger, problem…" />
-      <select v-model="filterArchetype" @change="loadData" class="select-field w-44">
+      <input v-model="searchQuery" class="input-field w-64" placeholder="Search organisation, trigger, problem…" />
+      <select v-model="filterArchetype" class="select-field w-44">
         <option value="">All archetypes</option>
         <option v-for="a in archetypes" :key="a.id" :value="a.id">{{ a.id }} — {{ a.name }}</option>
       </select>
-      <select v-model="filterStage" @change="loadData" class="select-field w-48">
+      <select v-model="filterStage" class="select-field w-48">
         <option value="">All conversion stages</option>
         <option v-for="s in stages" :key="s.id" :value="s.id">{{ s.label }}</option>
       </select>
       <button @click="loadData" class="btn-secondary text-sm">Refresh</button>
     </div>
 
-    <div v-if="loading && deals.length === 0" class="py-12 text-center text-gray-500">Loading pipeline…</div>
-    <div v-else-if="!loading && deals.length === 0" class="py-12 text-center text-gray-500">
+    <div v-if="loading && opportunities.length === 0" class="py-12 text-center text-gray-500">Loading pipeline…</div>
+    <div v-else-if="!loading && opportunities.length === 0" class="py-12 text-center text-gray-500">
       No opportunities in this view.
       <router-link to="/intake" class="text-primary-400 underline">Capture one</router-link>
       or
@@ -186,7 +195,7 @@ const grouped = computed(() => {
                 v-for="deal in group.deals"
                 :key="deal.id"
                 class="border-b border-deep-700 hover:bg-deep-700/50 cursor-pointer transition-colors"
-                @click="router.push(`/deals/${deal.id}`)"
+                @click="router.push(`/accounts?open=${deal.account_id || deal.id}`)"
               >
                 <td class="py-3 px-4">
                   <div class="font-medium text-white">{{ deal.partner_name }}</div>
