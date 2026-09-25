@@ -4,6 +4,10 @@ primary_region = "lhr"
 [build]
   dockerfile = "Dockerfile"
 
+[processes]
+  app = "npx tsx src/index.ts"
+  digest = "npx tsx src/jobs/wake-digest.ts"
+
 [env]
   PARTNERSHIP_HOST = "0.0.0.0"
   PARTNERSHIP_PORT = "8080"
@@ -27,6 +31,7 @@ primary_region = "lhr"
 [[mounts]]
   source = "lani_data"
   destination = "/data"
+  processes = ["app"]
 
 [[vm]]
   size = "shared-cpu-1x"

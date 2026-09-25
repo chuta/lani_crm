@@ -26,6 +26,7 @@ import economicsRouter from './routes/economics.js';
 import releaseRouter from './routes/release.js';
 import bdProspectingRouter from './routes/bd-prospecting.js';
 import accountsRouter from './routes/accounts.js';
+import jobsRouter from './routes/jobs.js';
 
 const PORT = Number(process.env.PARTNERSHIP_PORT || 3003);
 const HOST = process.env.PARTNERSHIP_HOST || '127.0.0.1';
@@ -59,7 +60,7 @@ healthRouter.get('/health', (_req: Request, res: Response) => {
 app.use('/api/partnerships', healthRouter);
 
 app.use('/api/partnerships', (req, res, next) => {
-  if (req.path === '/health') {
+  if (req.path === '/health' || req.path === '/jobs/pipeline-digest') {
     next();
     return;
   }
@@ -73,12 +74,14 @@ app.get('/api/partnerships/me', (req, res) => {
 app.use('/api/partnerships/users', usersRouter);
 
 app.use('/api/partnerships', (req, res, next) => {
-  if (req.path === '/health' || req.path === '/me' || req.path.startsWith('/users')) {
+  if (req.path === '/health' || req.path === '/me' || req.path.startsWith('/users') || req.path === '/jobs/pipeline-digest') {
     next();
     return;
   }
   requireAppUser(req, res, next);
 });
+
+app.use('/api/partnerships/jobs', jobsRouter);
 
 // Routes (existing)
 app.use('/api/partnerships/accounts', accountsRouter);

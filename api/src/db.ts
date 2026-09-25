@@ -130,6 +130,7 @@ export function initializeDatabase(): void {
     CREATE INDEX IF NOT EXISTS idx_transitions_deal ON stage_transitions(deal_id);
   `);
   ensureAccountsSchema();
+  ensureDigestSchema();
 }
 
 function columnExists(table: string, column: string): boolean {
@@ -206,6 +207,17 @@ export function ensureAccountsSchema(): void {
   ensureCoachStallsSchema();
   ensureCommercialCasesSchema();
   ensureConversionAdviceSchema();
+}
+
+function ensureDigestSchema(): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS pipeline_digest_sends (
+      slot TEXT NOT NULL,
+      lagos_date TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (slot, lagos_date)
+    );
+  `);
 }
 
 function addColumn(table: string, column: string, def: string): void {
