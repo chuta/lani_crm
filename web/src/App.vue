@@ -46,6 +46,7 @@ async function logout() {
 <template>
   <div class="min-h-screen bg-deep-900">
     <header v-if="!hideChrome" class="bg-deep-800 border-b border-deep-600 sticky top-0 z-50">
+      <div class="h-1 bg-lani-green"></div>
       <div class="w-full px-4 sm:px-6 lg:px-8">
         <div class="flex items-center justify-between h-16">
           <div class="flex items-center gap-3">
