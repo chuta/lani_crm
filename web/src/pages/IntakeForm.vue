@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+import { Lineicons } from '@lineiconshq/vue-lineicons'
+import { CheckCircle1Outlined, FilePencilOutlined } from '@lineiconshq/free-icons'
 import {
   api,
   type Account,
@@ -192,7 +194,10 @@ function setScore(dimId: string, n: number) {
 <template>
   <div>
     <div class="mb-8">
-      <h2 class="text-2xl font-display font-bold text-white">📝 Opportunity Intake</h2>
+      <h2 class="text-2xl font-display font-bold text-white flex items-center gap-2">
+        <Lineicons :icon="FilePencilOutlined" :size="22" stroke-width="1.8" class="text-primary-400" />
+        Opportunity Intake
+      </h2>
       <p class="text-gray-400 mt-1">Creates or updates the organisation on the Account Map, then opens a linked pipeline opportunity.</p>
     </div>
 
@@ -202,7 +207,7 @@ function setScore(dimId: string, n: number) {
 
     <div v-if="result" class="card border-accent-success/30 mb-8">
       <div class="flex items-center gap-2 text-accent-success mb-4">
-        <span class="text-xl">✅</span>
+        <Lineicons :icon="CheckCircle1Outlined" :size="22" stroke-width="1.8" />
         <h3 class="font-display font-semibold">Opportunity captured</h3>
       </div>
       <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">

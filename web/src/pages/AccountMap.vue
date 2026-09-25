@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { Lineicons } from '@lineiconshq/vue-lineicons'
+import { Pencil1Outlined, Trash3Outlined } from '@lineiconshq/free-icons'
 import AccountBriefPanel from '../components/AccountBriefPanel.vue'
 import AccountCasePanel from '../components/AccountCasePanel.vue'
 import AccountCoachPanel from '../components/AccountCoachPanel.vue'
@@ -1151,9 +1153,12 @@ const PIPELINE_STAGES = ['Intelligence', 'Qualified', 'In conversation', 'Propos
             <p class="text-sm text-gray-500 mt-1">{{ archetypeName(selected.archetype) }} · {{ geographyLabel(selected.geography) }} · {{ laneLabel(selected.lane) }}</p>
           </div>
           <div class="flex items-center gap-2 shrink-0">
-            <button v-if="!editing" class="btn-secondary text-sm" @click="startEdit">✏️ Edit</button>
-            <button class="btn-secondary text-sm text-red-400 hover:text-red-300" :disabled="archiving" @click="archiveSelected">
-              {{ archiving ? 'Archiving…' : '🗑️ Archive' }}
+            <button v-if="!editing" class="btn-secondary text-sm inline-flex items-center gap-1.5" @click="startEdit">
+              <Lineicons :icon="Pencil1Outlined" :size="16" stroke-width="1.8" /> Edit
+            </button>
+            <button class="btn-secondary text-sm text-red-400 hover:text-red-300 inline-flex items-center gap-1.5" :disabled="archiving" @click="archiveSelected">
+              <Lineicons :icon="Trash3Outlined" :size="16" stroke-width="1.8" />
+              {{ archiving ? 'Archiving…' : 'Archive' }}
             </button>
             <button class="text-gray-400 hover:text-white text-xl leading-none px-1" @click="closeDetail">×</button>
           </div>
