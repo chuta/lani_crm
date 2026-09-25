@@ -49,6 +49,19 @@ function laneName(id?: string) {
 const workingQueue = computed(() =>
   (data.value?.queue || []).filter((d: any) => d.current_stage >= 1 && d.current_stage <= 5)
 )
+
+function money(value: number | null | undefined) {
+  if (value == null) return '—'
+  return new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(value)
+}
+
+const estimatedValueNote = computed(() => {
+  const valued = data.value?.summary.estimated_value_count ?? 0
+  const qualified = data.value?.summary.qualified_accounts ?? data.value?.summary.working ?? 0
+  if (!qualified) return 'No qualified accounts yet'
+  if (valued < qualified) return `${valued} of ${qualified} qualified accounts have an estimate`
+  return `Across ${qualified} qualified account${qualified === 1 ? '' : 's'}`
+})
 </script>
 
 <template>
@@ -61,6 +74,12 @@ const workingQueue = computed(() =>
     <div v-if="loading" class="text-center py-12 text-gray-500">Loading executive overview…</div>
 
     <template v-if="data">
+      <div class="stat-card mb-4">
+        <div class="stat-label">Estimated value</div>
+        <div class="text-3xl font-bold font-display text-primary-400 mt-1">{{ money(data.summary.estimated_value ?? 0) }}</div>
+        <p class="text-xs text-gray-500 mt-2">{{ estimatedValueNote }}</p>
+      </div>
+
       <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-8">
         <div class="stat-card">
           <div class="stat-value">{{ data.summary.working ?? data.summary.total_active_deals }}</div>

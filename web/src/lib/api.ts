@@ -475,6 +475,9 @@ export interface ExecutiveData {
     missing_next_action?: number;
     unnamed_consortium?: number;
     ecosystem_partners?: number;
+    estimated_value?: number;
+    estimated_value_count?: number;
+    qualified_accounts?: number;
   };
 }
 

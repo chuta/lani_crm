@@ -101,7 +101,16 @@ router.get('/', (_req: Request, res: Response): void => {
       };
     });
 
-    const working = allActive.filter((d: any) => d.current_stage >= 2 && d.current_stage <= 5).length;
+    const qualifiedBook = allActive.filter((d: any) => d.current_stage >= 2 && d.current_stage <= 5);
+    const working = qualifiedBook.length;
+    const estimatedValue = qualifiedBook.reduce((sum: number, d: any) => {
+      const value = Number(d.estimated_value);
+      return sum + (Number.isFinite(value) ? value : 0);
+    }, 0);
+    const estimatedValueCount = qualifiedBook.filter((d: any) => {
+      const value = Number(d.estimated_value);
+      return Number.isFinite(value) && value > 0;
+    }).length;
     const inConversation = allActive.filter((d: any) => d.current_stage === 3).length;
     const atProposal = allActive.filter((d: any) => d.current_stage === 4 || d.current_stage === 5).length;
     const won = allActive.filter((d: any) => d.current_stage === 6).length;
@@ -139,6 +148,9 @@ router.get('/', (_req: Request, res: Response): void => {
         missing_next_action: missingNextAction,
         unnamed_consortium: unnamedConsortium,
         ecosystem_partners: ecosystemPartners,
+        estimated_value: estimatedValue,
+        estimated_value_count: estimatedValueCount,
+        qualified_accounts: qualifiedBook.length,
       },
     });
   } catch (e: any) {
