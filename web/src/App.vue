@@ -1,6 +1,17 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { Lineicons } from '@lineiconshq/vue-lineicons'
+import {
+  MapPin5Outlined,
+  VectorNodes6Outlined,
+  Layout26Outlined,
+  PlusOutlined,
+  BarChart4Outlined,
+  Books2Outlined,
+  UserMultiple4Outlined,
+  ExitOutlined,
+} from '@lineiconshq/free-icons'
 import BrandMark from './components/BrandMark.vue'
 import { signOut, useAuth } from './lib/auth'
 
@@ -13,13 +24,13 @@ const loggingOut = ref(false)
 const hideChrome = computed(() => Boolean(route.meta.public || route.meta.pending))
 
 const allNavItems = [
-  { path: '/accounts', label: 'Account Map', icon: '🗺️' },
-  { path: '/ecosystem', label: 'Ecosystem', icon: '🤝' },
-  { path: '/pipeline', label: 'Pipeline', icon: '📋' },
-  { path: '/intake', label: 'Intake', icon: '📝' },
-  { path: '/executive', label: 'Executive', icon: '👁️' },
-  { path: '/archetypes', label: 'Library', icon: '📚' },
-  { path: '/users', label: 'Users', icon: '👥', admin: true },
+  { path: '/accounts', label: 'Account Map', icon: MapPin5Outlined },
+  { path: '/ecosystem', label: 'Ecosystem', icon: VectorNodes6Outlined },
+  { path: '/pipeline', label: 'Pipeline', icon: Layout26Outlined },
+  { path: '/intake', label: 'Intake', icon: PlusOutlined },
+  { path: '/executive', label: 'Executive', icon: BarChart4Outlined },
+  { path: '/archetypes', label: 'Library', icon: Books2Outlined },
+  { path: '/users', label: 'Users', icon: UserMultiple4Outlined, admin: true },
 ]
 
 const navItems = computed(() =>
@@ -31,6 +42,17 @@ const roleLabel = computed(() => {
   if (auth.role.value === 'bd_user') return 'BD User'
   return ''
 })
+
+const pageTitle = computed(() => {
+  if (route.path.startsWith('/deals/')) return 'Pipeline'
+  return navItems.value.find((item) => item.path === route.path)?.label || 'LANI'
+})
+
+function isActive(path: string) {
+  if (route.path === path) return true
+  if (path === '/pipeline' && route.path.startsWith('/deals/')) return true
+  return false
+}
 
 async function logout() {
   loggingOut.value = true
@@ -44,91 +66,73 @@ async function logout() {
 </script>
 
 <template>
-  <div class="min-h-screen bg-deep-900">
-    <header v-if="!hideChrome" class="bg-deep-800 border-b border-deep-600 sticky top-0 z-50">
-      <div class="h-1 bg-lani-green"></div>
-      <div class="w-full px-4 sm:px-6 lg:px-8">
-        <div class="flex items-center justify-between h-16">
-          <div class="flex items-center gap-3">
-            <BrandMark size="sm" />
-            <div class="hidden sm:block pl-1 border-l border-deep-600">
-              <h1 class="text-sm font-display font-semibold text-white leading-tight">B2B Partnership Engine</h1>
-              <p class="text-[11px] text-gray-500">Commercial intelligence · Account map · Qualified pipeline</p>
-            </div>
-          </div>
-          <!-- Desktop nav -->
-          <nav class="hidden md:flex items-center gap-1">
-            <router-link
-              v-for="item in navItems"
-              :key="item.path"
-              :to="item.path"
-              class="px-3 py-2 rounded-lg text-sm font-medium transition-colors"
-              :class="route.path === item.path
-                ? 'bg-primary-500/20 text-primary-400'
-                : 'text-gray-400 hover:text-gray-200 hover:bg-deep-700'"
-            >
-              {{ item.icon }} {{ item.label }}
-            </router-link>
-            <span class="w-px h-6 bg-deep-600 mx-1"></span>
-            <div class="px-2 text-right hidden lg:block">
-              <p class="text-xs text-gray-200 leading-tight">{{ auth.profile?.email }}</p>
-              <p class="text-[11px] text-gray-500">{{ roleLabel }}</p>
-            </div>
-            <button
-              @click="logout"
-              :disabled="loggingOut"
-              class="px-3 py-2 rounded-lg text-sm font-medium transition-colors text-gray-400 hover:text-red-400 hover:bg-red-500/10 flex items-center gap-1.5"
-            >
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                <polyline points="16 17 21 12 16 7" />
-                <line x1="21" y1="12" x2="9" y2="12" />
-              </svg>
-              {{ loggingOut ? 'Signing out…' : 'Sign out' }}
-            </button>
-          </nav>
-          <!-- Mobile hamburger -->
-          <button @click="mobileMenuOpen = !mobileMenuOpen" class="md:hidden p-2 text-gray-400 hover:text-white">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path v-if="!mobileMenuOpen" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
-              <path v-else stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
+  <div v-if="hideChrome" class="min-h-screen bg-deep-900">
+    <router-view />
+  </div>
+
+  <div v-else class="min-h-screen bg-deep-900">
+    <div
+      v-if="mobileMenuOpen"
+      class="fixed inset-0 z-40 bg-black/60 md:hidden"
+      @click="mobileMenuOpen = false"
+    ></div>
+
+    <aside
+      class="fixed inset-y-0 left-0 z-50 flex w-60 flex-col border-r border-deep-600 bg-deep-800 transition-transform md:translate-x-0"
+      :class="mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'"
+    >
+      <div class="h-1 shrink-0 bg-lani-green"></div>
+      <div class="px-5 py-5 border-b border-deep-600">
+        <BrandMark size="sm" />
+        <p class="mt-3 text-sm font-display font-semibold text-white leading-tight">B2B Partnership Engine</p>
+        <p class="mt-1 text-[11px] text-gray-500">Commercial intelligence</p>
       </div>
-      <!-- Mobile menu -->
-      <div v-if="mobileMenuOpen" class="md:hidden border-t border-deep-600 px-4 py-3 space-y-1">
+
+      <nav class="flex-1 overflow-y-auto px-3 py-4 space-y-1">
         <router-link
           v-for="item in navItems"
           :key="item.path"
           :to="item.path"
+          class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors"
+          :class="isActive(item.path)
+            ? 'bg-lani-green text-white'
+            : 'text-gray-400 hover:bg-deep-700 hover:text-gray-100'"
           @click="mobileMenuOpen = false"
-          class="block px-3 py-2 rounded-lg text-sm font-medium transition-colors"
-          :class="route.path === item.path
-            ? 'bg-primary-500/20 text-primary-400'
-            : 'text-gray-400 hover:text-gray-200 hover:bg-deep-700'"
         >
-          {{ item.icon }} {{ item.label }}
+          <Lineicons :icon="item.icon" :size="18" stroke-width="1.8" class="shrink-0" />
+          {{ item.label }}
         </router-link>
-        <p class="px-3 pt-2 text-xs text-gray-400">{{ auth.profile?.email }} · {{ roleLabel }}</p>
-        <hr class="border-deep-600 my-2" />
+      </nav>
+
+      <div class="border-t border-deep-600 px-3 py-3">
+        <div class="px-2 pb-2">
+          <p class="truncate text-xs text-gray-200">{{ auth.profile?.email }}</p>
+          <p class="text-[11px] text-gray-500">{{ roleLabel }}</p>
+        </div>
         <button
-          @click="logout"
+          type="button"
+          class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-400 transition-colors hover:bg-red-500/10 hover:text-red-400"
           :disabled="loggingOut"
-          class="w-full text-left block px-3 py-2 rounded-lg text-sm font-medium transition-colors text-gray-400 hover:text-red-400 hover:bg-red-500/10 flex items-center gap-1.5"
+          @click="logout"
         >
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-            <polyline points="16 17 21 12 16 7" />
-            <line x1="21" y1="12" x2="9" y2="12" />
-          </svg>
+          <Lineicons :icon="ExitOutlined" :size="18" stroke-width="1.8" />
           {{ loggingOut ? 'Signing out…' : 'Sign out' }}
         </button>
       </div>
-    </header>
+    </aside>
 
-    <main :class="hideChrome ? '' : 'w-full px-4 sm:px-6 lg:px-8 py-8'">
-      <router-view />
-    </main>
+    <div class="md:pl-60">
+      <header class="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-deep-600 bg-deep-900/95 px-4 backdrop-blur md:hidden">
+        <button type="button" class="p-2 text-gray-300" @click="mobileMenuOpen = true">
+          <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+        <p class="text-sm font-medium text-white">{{ pageTitle }}</p>
+      </header>
+      <main class="w-full px-4 py-6 sm:px-6 lg:px-8">
+        <router-view />
+      </main>
+    </div>
   </div>
 </template>
