@@ -55,7 +55,7 @@ const workingQueue = computed(() =>
   <div>
     <div class="mb-8">
       <h2 class="text-2xl font-display font-bold text-white">Executive Dashboard</h2>
-      <p class="text-gray-400 mt-1">By commercial lane, archetype, trigger, and conversion — not tech triage</p>
+      <p class="text-gray-400 mt-1">By commercial lane, archetype, trigger, and conversion only</p>
     </div>
 
     <div v-if="loading" class="text-center py-12 text-gray-500">Loading executive overview…</div>
@@ -181,7 +181,7 @@ const workingQueue = computed(() =>
               <tr v-if="workingQueue.length === 0">
                 <td colspan="6" class="py-6 text-center text-gray-500">No working opportunities yet</td>
               </tr>
-              <tr v-for="deal in workingQueue" :key="deal.id" @click="router.push(`/deals/${deal.id}`)" class="border-b border-deep-700 hover:bg-deep-700/50 cursor-pointer">
+              <tr v-for="deal in workingQueue" :key="deal.id" @click="router.push(`/accounts?open=${deal.account_id || deal.id}`)" class="border-b border-deep-700 hover:bg-deep-700/50 cursor-pointer">
                 <td class="py-2 px-3 font-medium text-white">{{ deal.partner_name }}</td>
                 <td class="py-2 px-3 text-xs text-gray-400">{{ laneName(deal.lane) }}</td>
                 <td class="py-2 px-3">
@@ -210,7 +210,7 @@ const workingQueue = computed(() =>
                   <span class="font-medium">Next:</span> {{ b.suggestion }}
                 </div>
               </div>
-              <router-link :to="`/deals/${b.deal_id}`" class="btn-secondary text-xs shrink-0">View</router-link>
+              <router-link :to="`/accounts?open=${b.account_id || b.deal_id}`" class="btn-secondary text-xs shrink-0">View</router-link>
             </div>
           </div>
         </div>

@@ -5,17 +5,27 @@
 import { Router, type Request, type Response } from 'express';
 import db from '../db.js';
 import { COMMERCIAL_LANES, CONVERSION_STAGES, conversionStageLabel } from '../catalog.js';
-import { DEAL_SELECT, shapeDeal } from '../services/account-book.js';
+import { shapeAccount } from '../services/account-book.js';
 
 const router = Router();
 
 router.get('/', (_req: Request, res: Response): void => {
   try {
     const allActive = (db.prepare(`
-      ${DEAL_SELECT}
-      WHERE d.is_archived = 0
-      ORDER BY d.priority_score DESC, d.created_at DESC
-    `).all() as any[]).map(shapeDeal);
+      SELECT * FROM accounts
+      WHERE is_archived = 0
+      ORDER BY internal_priority DESC, updated_at DESC
+    `).all() as any[]).map((row) => {
+      const account = shapeAccount(row);
+      return {
+        ...account,
+        account_id: account.id,
+        partner_name: account.organisation,
+        priority_score: account.internal_priority,
+        bd_owner: account.relationship_owner,
+        blocking_factor: account.current_stage === 8 ? 'On hold' : null,
+      };
+    });
 
     const stuckDeals = allActive.filter((d: any) => d.blocking_factor || d.current_stage === 8);
 
@@ -39,29 +49,28 @@ router.get('/', (_req: Request, res: Response): void => {
 
     const archetypeDist = db.prepare(`
       SELECT archetype, COUNT(*) as count
-      FROM deals WHERE is_archived = 0
+      FROM accounts WHERE is_archived = 0
       GROUP BY archetype ORDER BY archetype
     `).all();
 
     const triggerDist = db.prepare(`
-      SELECT COALESCE(NULLIF(a.trigger_event, ''), 'Unspecified') as trigger_event, COUNT(*) as count
-      FROM deals d
-      LEFT JOIN accounts a ON a.id = d.account_id
-      WHERE d.is_archived = 0
-      GROUP BY COALESCE(NULLIF(a.trigger_event, ''), 'Unspecified')
+      SELECT COALESCE(NULLIF(trigger_event, ''), 'Unspecified') as trigger_event, COUNT(*) as count
+      FROM accounts
+      WHERE is_archived = 0
+      GROUP BY COALESCE(NULLIF(trigger_event, ''), 'Unspecified')
       ORDER BY count DESC
     `).all();
 
     const priorityBuckets = db.prepare(`
       SELECT
         CASE
-          WHEN priority_score >= 4 THEN 'high'
-          WHEN priority_score >= 3 THEN 'medium'
+          WHEN internal_priority >= 4 THEN 'high'
+          WHEN internal_priority >= 3 THEN 'medium'
           ELSE 'low'
         END as bucket,
         COUNT(*) as count,
-        ROUND(AVG(priority_score), 2) as avg_score
-      FROM deals WHERE is_archived = 0 AND priority_score IS NOT NULL
+        ROUND(AVG(internal_priority), 2) as avg_score
+      FROM accounts WHERE is_archived = 0 AND internal_priority IS NOT NULL
       GROUP BY bucket
     `).all();
 
@@ -82,6 +91,7 @@ router.get('/', (_req: Request, res: Response): void => {
       }
       return {
         deal_id: d.id,
+        account_id: d.account_id || d.id,
         partner_name: d.partner_name,
         current_stage: d.current_stage,
         stage_name: conversionStageLabel(d.current_stage),
